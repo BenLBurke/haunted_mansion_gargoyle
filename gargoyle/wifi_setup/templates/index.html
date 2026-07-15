@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gargoyle Setup</title>
+  <style>
+    body { font-family: -apple-system, sans-serif; background: #14121a; color: #e8e2f0; margin: 0; padding: 24px 16px; }
+    .card { max-width: 420px; margin: 0 auto; }
+    h1 { font-size: 1.4rem; margin-bottom: 4px; }
+    p.sub { color: #9d8fb5; margin-top: 0; }
+    label { display: block; margin: 16px 0 6px; font-size: 0.9rem; color: #c9bfdb; }
+    select, input[type=text], input[type=password] {
+      width: 100%; box-sizing: border-box; padding: 10px; border-radius: 8px;
+      border: 1px solid #4a4160; background: #1f1c29; color: #e8e2f0; font-size: 1rem;
+    }
+    button {
+      width: 100%; margin-top: 22px; padding: 12px; border-radius: 8px; border: none;
+      background: #6a3fb5; color: white; font-size: 1.05rem; font-weight: 600;
+    }
+    .error { background: #4a1f2b; border: 1px solid #8a3049; color: #ffc2d1; padding: 10px 12px; border-radius: 8px; margin-top: 16px; }
+    .ghost { font-size: 2rem; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="ghost">👻</div>
+    <h1>Welcome to the Gargoyle</h1>
+    <p class="sub">Connect it to your WiFi so it can watch the Haunted Mansion wait times.</p>
+
+    {% if error %}
+      <div class="error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="/connect">
+      <label for="ssid">WiFi network</label>
+      <select id="ssid" name="ssid">
+        <option value="">-- choose a network --</option>
+        {% for ssid in ssids %}
+          <option value="{{ ssid }}">{{ ssid }}</option>
+        {% endfor %}
+        <option value="">Other (type below)</option>
+      </select>
+
+      <label for="ssid_manual">...or type a network name</label>
+      <input type="text" id="ssid_manual" name="ssid_manual" placeholder="Network name (SSID)">
+
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password" placeholder="WiFi password">
+
+      <label for="park">Which park?</label>
+      <select id="park" name="park">
+        {% for key, label in parks %}
+          <option value="{{ key }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+
+      <button type="submit">Connect</button>
+    </form>
+  </div>
+</body>
+</html>

@@ -1,0 +1,12 @@
+[project]
+name = "gargoyle"
+version = "0.1.0"
+description = "Haunted Mansion wait-time gargoyle: candlestick flicker, OLED wait times, haunted animations, WiFi captive portal"
+requires-python = ">=3.10"
+
+[tool.setuptools.packages.find]
+include = ["gargoyle*"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

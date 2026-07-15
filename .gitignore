@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+venv/
+.venv/
+*.egg-info/
+build/
+dist/
+
+# Sound cues are synthesized at install/first-run time; see gargoyle/audio/generate_tones.py
+gargoyle/audio/sounds/*.wav
