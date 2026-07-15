@@ -119,14 +119,21 @@ def main(argv: list[str] | None = None) -> int:
 
     gargoyle = Gargoyle(config)
 
-    def handle_signal(signum, frame):
+    def handle_sigterm(signum, frame):
         gargoyle.request_stop()
 
-    signal.signal(signal.SIGTERM, handle_signal)
-    signal.signal(signal.SIGINT, handle_signal)
+    # SIGTERM has no default Python exception, so we intercept it to shut down
+    # cleanly. SIGINT (Ctrl+C) is deliberately left alone: Python's default
+    # handler raises KeyboardInterrupt, which is what lets it break out of a
+    # blocked wait() immediately. A handler that just sets a flag and returns
+    # normally doesn't -- the blocking call has no reason to wake up early, so
+    # Ctrl+C would silently do nothing until the current poll wait times out.
+    signal.signal(signal.SIGTERM, handle_sigterm)
 
     try:
         gargoyle.run_forever()
+    except KeyboardInterrupt:
+        pass
     finally:
         gargoyle.stop()
     return 0
