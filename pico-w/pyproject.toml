@@ -1,0 +1,8 @@
+[project]
+name = "gargoyle-pico"
+version = "0.1.0"
+description = "Tests for the portable (hardware-independent) logic shared with the on-device MicroPython app"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
