@@ -55,6 +55,17 @@ def forget_wifi():
         pass
 
 
+def has_real_ip(sta):
+    # isconnected() can report True (associated to the AP) before DHCP has
+    # actually handed out a usable address -- seen in the wild returning
+    # "0.0.0.0" as the IP well after isconnected() flipped True. Anything
+    # that depends on actually reaching the internet needs to check both.
+    try:
+        return sta.ifconfig()[0] != "0.0.0.0"
+    except Exception:
+        return False
+
+
 def connect_sta(ssid, password, timeout_seconds=30, on_tick=None):
     """Blocking join attempt. `on_tick`, if given, is called every ~250ms
     while waiting -- main.py uses it to keep the candles flickering during
@@ -65,17 +76,17 @@ def connect_sta(ssid, password, timeout_seconds=30, on_tick=None):
     sta.connect(ssid, password)
     deadline = time.ticks_add(time.ticks_ms(), timeout_seconds * 1000)
     while time.ticks_diff(deadline, time.ticks_ms()) > 0:
-        if sta.isconnected():
+        if sta.isconnected() and has_real_ip(sta):
             return True
         if on_tick:
             on_tick()
         time.sleep_ms(250)
-    return sta.isconnected()
+    return sta.isconnected() and has_real_ip(sta)
 
 
 def is_connected():
     sta = sta_iface()
-    return sta.active() and sta.isconnected()
+    return sta.active() and sta.isconnected() and has_real_ip(sta)
 
 
 def start_ap(ssid, password):

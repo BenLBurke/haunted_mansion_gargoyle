@@ -12,7 +12,7 @@ import time
 import asyncio
 
 from gargoyle_config import save as save_config
-from network_setup import AP_IP, save_wifi, sta_iface
+from network_setup import AP_IP, has_real_ip, save_wifi, sta_iface
 from parks import PARKS
 
 PORTAL_PORT = 80
@@ -28,10 +28,10 @@ async def _connect_sta_async(ssid, password, timeout_seconds):
     sta.connect(ssid, password)
     deadline = time.ticks_add(time.ticks_ms(), timeout_seconds * 1000)
     while time.ticks_diff(deadline, time.ticks_ms()) > 0:
-        if sta.isconnected():
+        if sta.isconnected() and has_real_ip(sta):
             return True
         await asyncio.sleep_ms(250)
-    return sta.isconnected()
+    return sta.isconnected() and has_real_ip(sta)
 
 
 async def _flicker_candles(candles):
