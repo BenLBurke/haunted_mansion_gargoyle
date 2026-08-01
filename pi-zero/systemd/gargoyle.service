@@ -1,0 +1,18 @@
+[Unit]
+Description=Haunted Mansion wait-time gargoyle
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=simple
+ExecStart=/opt/gargoyle/venv/bin/python -m gargoyle.main --config /etc/gargoyle/config.yaml
+Restart=on-failure
+RestartSec=5
+User=root
+# Needs root for GPIO/I2C access and to run nmcli hotspot / systemctl reboot during
+# WiFi provisioning. If you lock this down further, grant the specific capabilities
+# instead of running as root.
+WorkingDirectory=/opt/gargoyle
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,37 @@
+# Copy this file to /etc/gargoyle/config.yaml (scripts/install.sh does this for you)
+# and adjust as needed. Any field left out falls back to the default in gargoyle/config.py.
+
+# "disneyland" (Disneyland Park, Anaheim) or "walt_disney_world" (Magic Kingdom, WDW).
+# Can also be changed from the captive portal during WiFi setup.
+park: disneyland
+
+# How often to check themeparks.wiki for a new wait time, in seconds.
+poll_interval_seconds: 60
+
+# BCM GPIO pin numbers for each candlestick's flame LED.
+led_pin_candlestick_1: 17
+led_pin_candlestick_2: 27
+
+# SSD1306 OLED over I2C.
+display_i2c_port: 1
+display_i2c_address: 0x3C
+display_width: 128
+display_height: 64
+
+# ALSA device for the speaker (null = system default, which is right for a
+# single MAX98357A I2S amp). Run `aplay -L` to see other options.
+audio_device: null
+sound_on_wait_increase: false
+sound_on_wait_decrease: true
+sound_on_park_open: true
+sound_on_park_close: true
+volume: 0.8
+
+# Force mock hardware backends (for developing off-Pi). Overridden by --simulate.
+simulate: false
+
+# WiFi provisioning captive portal.
+ap_ssid: Gargoyle-Setup
+ap_password: hauntedmansion
+portal_port: 80
+connectivity_timeout_seconds: 30

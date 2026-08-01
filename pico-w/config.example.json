@@ -1,0 +1,23 @@
+{
+  "park": "disneyland",
+  "poll_interval_seconds": 60,
+  "led_pin_candlestick_1": 2,
+  "led_pin_candlestick_2": 3,
+  "i2c_id": 0,
+  "i2c_scl_pin": 5,
+  "i2c_sda_pin": 4,
+  "display_width": 128,
+  "display_height": 64,
+  "display_i2c_address": 60,
+  "i2s_id": 0,
+  "i2s_sck_pin": 16,
+  "i2s_ws_pin": 17,
+  "i2s_sd_pin": 18,
+  "sound_on_wait_increase": false,
+  "sound_on_wait_decrease": true,
+  "sound_on_park_open": true,
+  "sound_on_park_close": true,
+  "ap_ssid": "Gargoyle-Setup",
+  "ap_password": "hauntedmansion",
+  "connectivity_timeout_seconds": 30
+}
