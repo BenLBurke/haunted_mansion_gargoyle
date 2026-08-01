@@ -30,3 +30,28 @@ class Screen:
         import utime
 
         animations.play(self.device, self.width, self.height, self.device.show, utime.sleep_ms)
+
+
+class ConsoleScreen:
+    """Stands in for Screen when display_enabled is False -- prints what
+    would have been shown to the serial console instead, for bring-up
+    testing on a breadboard before the OLED is wired up."""
+
+    def show_snapshot(self, snapshot, park_label, connected):
+        attraction = snapshot.attraction
+        if attraction.status == "OPERATING" and attraction.wait_minutes is not None:
+            status = "{} min wait".format(attraction.wait_minutes)
+        else:
+            status = attraction.status
+
+        hours = ""
+        if snapshot.hours is not None:
+            hours = " ({}-{})".format(snapshot.hours.opening_text, snapshot.hours.closing_text)
+
+        print("[screen] {}: {}{} (connected={})".format(park_label, status, hours, connected))
+
+    def show_message(self, line1, line2=""):
+        print("[screen] {} {}".format(line1, line2).rstrip())
+
+    def play_wait_time_change_animation(self):
+        print("[screen] (ghost/bat animation would play here)")

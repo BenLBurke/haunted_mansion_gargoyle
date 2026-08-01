@@ -13,6 +13,8 @@
   "i2s_sck_pin": 16,
   "i2s_ws_pin": 17,
   "i2s_sd_pin": 18,
+  "display_enabled": true,
+  "audio_enabled": true,
   "sound_on_wait_increase": false,
   "sound_on_wait_decrease": true,
   "sound_on_park_open": true,

@@ -103,3 +103,12 @@ class SoundPlayer:
             ibuf=8000,
         )
         self._i2s_format = fmt_key
+
+
+class NullSoundPlayer:
+    """Stands in for SoundPlayer when audio_enabled is False -- prints the
+    cue name to the serial console instead, for bring-up testing on a
+    breadboard before the amp/speaker is wired up."""
+
+    def play(self, cue):
+        print("[sound] {}".format(cue))
