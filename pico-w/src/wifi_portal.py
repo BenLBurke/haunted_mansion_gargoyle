@@ -25,6 +25,12 @@ async def _connect_sta_async(ssid, password, timeout_seconds):
     made from inside a request handler."""
     sta = sta_iface()
     sta.active(True)
+    try:
+        # See network_setup.connect_sta for why this goes first.
+        sta.disconnect()
+        await asyncio.sleep_ms(200)
+    except OSError:
+        pass
     sta.connect(ssid, password)
     deadline = time.ticks_add(time.ticks_ms(), timeout_seconds * 1000)
     while time.ticks_diff(deadline, time.ticks_ms()) > 0:

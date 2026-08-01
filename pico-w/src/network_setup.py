@@ -73,6 +73,15 @@ def connect_sta(ssid, password, timeout_seconds=30, on_tick=None):
     timeout_seconds with nothing visibly happening."""
     sta = sta_iface()
     sta.active(True)
+    try:
+        # Clears stale association/DHCP state left over from a previous
+        # network or AP mode -- observed in the wild leaving isconnected()
+        # True with a bogus/leftover gateway and DNS server despite a fresh
+        # connect() call. A plain connect() alone didn't clear it; this did.
+        sta.disconnect()
+        time.sleep_ms(200)
+    except OSError:
+        pass  # not currently connected to anything -- nothing to clear
     sta.connect(ssid, password)
     deadline = time.ticks_add(time.ticks_ms(), timeout_seconds * 1000)
     while time.ticks_diff(deadline, time.ticks_ms()) > 0:
