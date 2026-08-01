@@ -7,14 +7,41 @@
 
 import gc
 import socket
+import time
 
 import asyncio
 
 from gargoyle_config import save as save_config
-from network_setup import AP_IP, connect_sta, save_wifi
+from network_setup import AP_IP, save_wifi, sta_iface
 from parks import PARKS
 
 PORTAL_PORT = 80
+
+
+async def _connect_sta_async(ssid, password, timeout_seconds):
+    """Same join-and-wait as network_setup.connect_sta, but yields to the
+    asyncio loop between checks instead of blocking it -- so the DNS server
+    and candle flicker task both keep running during a connection attempt
+    made from inside a request handler."""
+    sta = sta_iface()
+    sta.active(True)
+    sta.connect(ssid, password)
+    deadline = time.ticks_add(time.ticks_ms(), timeout_seconds * 1000)
+    while time.ticks_diff(deadline, time.ticks_ms()) > 0:
+        if sta.isconnected():
+            return True
+        await asyncio.sleep_ms(250)
+    return sta.isconnected()
+
+
+async def _flicker_candles(candles):
+    if not candles:
+        return
+    while True:
+        for candle in candles:
+            candle.step()
+        await asyncio.sleep_ms(60)
+
 
 PAGE_TEMPLATE = """<!doctype html>
 <html><head><meta charset="utf-8">
@@ -164,11 +191,14 @@ async def _handle_connect(writer, body, ctx):
         await _write_response(writer, 200, _render_index("Please enter a network name."))
         return
 
-    ok = connect_sta(ssid, password, timeout_seconds=20)
+    print("portal: attempting to join '{}'...".format(ssid))
+    ok = await _connect_sta_async(ssid, password, timeout_seconds=20)
     if not ok:
+        print("portal: could not join '{}'".format(ssid))
         await _write_response(writer, 200, _render_index("Couldn't join '{}'. Check the password and try again.".format(ssid)))
         return
 
+    print("portal: joined '{}', saving credentials and restarting".format(ssid))
     save_wifi(ssid, password)
     if park in PARKS:
         ctx["config"]["park"] = park
@@ -219,19 +249,22 @@ async def _handle_client(reader, writer, ctx):
         gc.collect()
 
 
-async def _serve(config, ctx):
+async def _serve(config, ctx, candles):
+    asyncio.create_task(_flicker_candles(candles))
     asyncio.create_task(_run_dns_server(AP_IP))
     asyncio.create_task(asyncio.start_server(lambda r, w: _handle_client(r, w, ctx), "0.0.0.0", PORTAL_PORT))
 
+    print("portal ready -- waiting for WiFi credentials")
     while not ctx["connected"]:
         await asyncio.sleep_ms(500)
+    print("portal: resetting to boot into normal mode")
     await asyncio.sleep_ms(1500)  # let the success response reach the browser
 
 
-def run(config):
+def run(config, candles=None):
     """Blocks, serving the captive portal, until WiFi credentials work. Resets the device on success."""
     ctx = {"config": config, "connected": False}
-    asyncio.run(_serve(config, ctx))
+    asyncio.run(_serve(config, ctx, candles))
 
     import machine
 

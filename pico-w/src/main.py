@@ -26,17 +26,21 @@ POLL_TICK_MS = 60  # candle flicker update granularity
 def run():
     config = gargoyle_config.load()
 
-    if needs_provisioning(config):
-        run_provisioning(config)  # blocks; the device resets itself on success
-        return
-
-    park = get_park(config["park"])
-    park_label = park.short_label
-
+    # Created before the connectivity check (not after) so the candles keep
+    # flickering through the entire boot -- including a stuck-for-30-seconds
+    # WiFi join attempt or a stretch in the captive portal -- rather than
+    # going dark for however long WiFi takes to sort itself out.
     candles = [
         make_candle(config["led_pin_candlestick_1"]),
         make_candle(config["led_pin_candlestick_2"]),
     ]
+
+    if needs_provisioning(config, candles):
+        run_provisioning(config, candles)  # blocks; the device resets itself on success
+        return
+
+    park = get_park(config["park"])
+    park_label = park.short_label
 
     if config["display_enabled"]:
         device = make_display(
