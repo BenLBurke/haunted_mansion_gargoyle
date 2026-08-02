@@ -12,9 +12,9 @@ import time
 
 import gargoyle_config
 import network_setup
-from audio import SoundPlayer
+from audio import NullSoundPlayer, SoundPlayer
 from candle import make_candle
-from display import Screen, make_display
+from display import ConsoleScreen, Screen, make_display
 from parks import get_park
 from provision import needs_provisioning, run_provisioning
 from state import StateTracker
@@ -26,29 +26,41 @@ POLL_TICK_MS = 60  # candle flicker update granularity
 def run():
     config = gargoyle_config.load()
 
-    if needs_provisioning(config):
-        run_provisioning(config)  # blocks; the device resets itself on success
-        return
-
-    park = get_park(config["park"])
-    park_label = park.short_label
-
+    # Created before the connectivity check (not after) so the candles keep
+    # flickering through the entire boot -- including a stuck-for-30-seconds
+    # WiFi join attempt or a stretch in the captive portal -- rather than
+    # going dark for however long WiFi takes to sort itself out.
     candles = [
         make_candle(config["led_pin_candlestick_1"]),
         make_candle(config["led_pin_candlestick_2"]),
     ]
 
-    device = make_display(
-        config["i2c_id"],
-        config["i2c_scl_pin"],
-        config["i2c_sda_pin"],
-        config["display_width"],
-        config["display_height"],
-        config["display_i2c_address"],
-    )
-    screen = Screen(device, config["display_width"], config["display_height"])
+    if needs_provisioning(config, candles):
+        run_provisioning(config, candles)  # blocks; the device resets itself on success
+        return
 
-    sound = SoundPlayer(config["i2s_id"], config["i2s_sck_pin"], config["i2s_ws_pin"], config["i2s_sd_pin"])
+    park = get_park(config["park"])
+    park_label = park.short_label
+
+    if config["display_enabled"]:
+        device = make_display(
+            config["i2c_id"],
+            config["i2c_scl_pin"],
+            config["i2c_sda_pin"],
+            config["display_width"],
+            config["display_height"],
+            config["display_i2c_address"],
+        )
+        screen = Screen(device, config["display_width"], config["display_height"])
+    else:
+        print("display_enabled is false -- printing screen contents to the console instead")
+        screen = ConsoleScreen()
+
+    if config["audio_enabled"]:
+        sound = SoundPlayer(config["i2s_id"], config["i2s_sck_pin"], config["i2s_ws_pin"], config["i2s_sd_pin"])
+    else:
+        print("audio_enabled is false -- printing sound cues to the console instead")
+        sound = NullSoundPlayer()
 
     tracker = StateTracker()
     screen.show_message("Waking up...")

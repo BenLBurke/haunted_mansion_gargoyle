@@ -58,6 +58,33 @@ detection, the candle flicker algorithm, config loading, and the park
 registry -- the same scope of coverage as the Pi Zero build's tests, minus
 whatever genuinely needs real hardware or a real network stack to exercise.
 
+## Testing without the screen or speaker
+
+Bringing this up on a breadboard before the OLED/amp are wired? Set these in
+`config.json`:
+
+```json
+"display_enabled": false,
+"audio_enabled": false,
+```
+
+With those off, the app prints what it *would* have shown/played to the
+serial console instead of touching the OLED or I2S -- connect with
+`mpremote connect auto` or Thonny's Shell and you'll see lines like:
+
+```
+[screen] Disneyland: 22 min wait (9:00am-11:00pm) (connected=True)
+[screen] (ghost/bat animation would play here)
+[sound] wait_decreased
+```
+
+This isn't optional cosmetics: without an OLED actually on the I2C bus, a
+write with nothing there to ACK it raises `OSError` and crashes `main.py` at
+boot. Candle LEDs and WiFi aren't affected either way -- PWM and I2S don't
+need anything listening on the other end, so those work identically whether
+or not you've wired the rest yet. Flip `display_enabled`/`audio_enabled`
+back to `true` once each part is actually wired.
+
 ## Sound cues
 
 Reuses the Pi Zero build's tone generator rather than duplicating it --
