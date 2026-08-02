@@ -12,7 +12,7 @@ User=root
 # Needs root for GPIO/I2C access and to run nmcli hotspot / systemctl reboot during
 # WiFi provisioning. If you lock this down further, grant the specific capabilities
 # instead of running as root.
-WorkingDirectory=/opt/gargoyle
+WorkingDirectory=/opt/gargoyle/pi-zero
 
 [Install]
 WantedBy=multi-user.target

@@ -61,6 +61,26 @@ def has_saved_wifi_connection() -> bool:
     return False
 
 
+def forget_all_wifi_connections() -> None:
+    """Deletes every saved WiFi connection profile (except our own setup AP),
+    used by the reset button to force back into first-time setup mode."""
+    if not _NMCLI_AVAILABLE:
+        _warn_missing_once()
+        return
+    try:
+        result = _run(["-t", "-f", "NAME,TYPE", "connection", "show"])
+    except (subprocess.SubprocessError, FileNotFoundError):
+        return
+    for line in result.stdout.splitlines():
+        name, _, conn_type = line.partition(":")
+        if conn_type == "802-11-wireless" and name != AP_CONNECTION_NAME:
+            try:
+                _run(["connection", "delete", name])
+                log.info("forgot saved WiFi connection '%s'", name)
+            except (subprocess.SubprocessError, FileNotFoundError):
+                log.warning("failed to delete saved wifi connection %r", name, exc_info=True)
+
+
 def wait_for_connectivity(timeout_seconds: int, poll_interval: float = 2.0) -> bool:
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:

@@ -15,6 +15,7 @@ from gargoyle.display.backend import make_screen
 from gargoyle.display.screen import Screen
 from gargoyle.leds.candle import CandleLED
 from gargoyle.leds.gpio_backend import make_pwm_led
+from gargoyle.reset_button import factory_reset, make_reset_button
 from gargoyle.state import Snapshot, StateTracker
 from gargoyle.themeparks_api import ThemeParksApiError, ThemeParksClient
 from gargoyle.wifi_setup.provision import needs_provisioning, run_provisioning
@@ -54,6 +55,12 @@ class Gargoyle:
 
         self.sound = SoundPlayer(device=config.audio_device, volume=config.volume)
 
+        # gpiozero's Button runs hold-detection on its own background thread,
+        # so unlike the Pico build there's no polling loop needed here.
+        self.reset_button = make_reset_button(
+            config.reset_button_pin, config.reset_hold_seconds, factory_reset, config.simulate
+        )
+
         self.api = ThemeParksClient(config.park_info())
         self.tracker = StateTracker()
 
@@ -66,6 +73,7 @@ class Gargoyle:
     def stop(self) -> None:
         for candle in self.candles:
             candle.stop()
+        self.reset_button.close()
 
     def request_stop(self) -> None:
         self._stop_event.set()

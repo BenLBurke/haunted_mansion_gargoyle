@@ -12,6 +12,10 @@ NetworkManager, a real filesystem, `pip`). Feature set is the same:
   opens and closes for the day (I2S -- the Pico has no analog audio out).
 - A self-hosted captive portal handles first-time WiFi setup from a phone,
   no keyboard/monitor needed.
+- Hold a physical reset button to forget WiFi and go back into setup mode
+  (also lets you pick a different park).
+- Checks for and installs new releases on its own, with automatic rollback
+  if an update doesn't come up healthy -- see [docs/OTA.md](docs/OTA.md).
 
 See [docs/HARDWARE.md](docs/HARDWARE.md) for the bill of materials, wiring,
 and flashing/deployment steps, and [docs/WIFI_SETUP.md](docs/WIFI_SETUP.md)
@@ -34,6 +38,8 @@ underneath. Everything here is written against MicroPython's own
 | WiFi provisioning | NetworkManager hotspot + Flask + dnsmasq redirect | `network.WLAN` AP mode + hand-rolled DNS spoofing + `asyncio` HTTP server (`wifi_portal.py`) |
 | Config | YAML | JSON (`gargoyle_config.py`) -- MicroPython has no PyYAML |
 | Process supervision | systemd | crash-and-reset in `main.py` (see docs/HARDWARE.md for why there's no hardware watchdog) |
+| Reset button | `gpiozero.Button` (hold-time built in) | hand-rolled hold-duration detection (`reset_button.py`) |
+| OTA updates | git clone + systemd timer, health-checked from outside the app process (`scripts/ota_apply.py`) | verified download + backup/swap + `boot.py`-based rollback (`ota.py`, `boot.py`) -- see [docs/OTA.md](docs/OTA.md) |
 
 `state.py`, `parks.py`, and the wait-time-formatting/flicker-math logic are
 kept dependency-free on purpose so they read almost identically to their
@@ -54,9 +60,12 @@ pytest
 ```
 
 This covers wait-time parsing/formatting, wait-time/park-open change
-detection, the candle flicker algorithm, config loading, and the park
-registry -- the same scope of coverage as the Pi Zero build's tests, minus
-whatever genuinely needs real hardware or a real network stack to exercise.
+detection, the candle flicker algorithm, config loading, the park registry,
+reset-button hold-duration detection, and the OTA updater's file-swap and
+rollback logic (`ota.py`/`boot.py`, verified against a real MicroPython
+interpreter too, not just CPython) -- the same scope of coverage as the Pi
+Zero build's tests, minus whatever genuinely needs real hardware or a real
+network stack to exercise.
 
 ## Testing without the screen or speaker
 

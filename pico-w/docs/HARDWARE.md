@@ -32,6 +32,12 @@ Pico. Everything below avoids them.
 | MAX98357A DIN (SD) | GP18 | 24 |
 | MAX98357A VIN | VBUS (5V, only live over USB) | 40 |
 | MAX98357A GND | GND | any |
+| Reset button (other leg to GND) | GP15 | 20 |
+
+The reset button just needs a momentary push button between GP15 and any
+GND pin -- it's wired with the internal pull-up enabled in software, so no
+external resistor is needed. Hold it for `reset_hold_seconds` (default 3s)
+to forget WiFi and reboot into setup mode.
 
 Two hard constraints if you change any of these in `config.json`:
 

@@ -12,6 +12,9 @@ Disney World.
 - No keyboard or monitor needed to set it up -- on first boot (or if it ever
   loses its WiFi) it broadcasts its own hotspot with a captive setup page so
   you can hand it your home WiFi from a phone.
+- Hold a physical reset button to forget WiFi and pick a different park.
+- Checks for and installs new releases on its own, with automatic rollback
+  if an update doesn't come up healthy.
 
 There are two independent implementations, one per board -- pick whichever
 you're building for:

@@ -29,6 +29,13 @@
 | MAX98357A DIN | GPIO21 | 40 |
 | MAX98357A VIN | 5V | 2 |
 | MAX98357A GND | GND | 6 |
+| Reset button (other leg to GND) | GPIO22 | 15 |
+
+The reset button just needs a momentary push button between GPIO22 and any
+GND pin -- `gpiozero.Button` uses the internal pull-up, so no external
+resistor is needed. Hold it for `reset_hold_seconds` (default 3s) to forget
+WiFi and reboot into setup mode; worth routing to a small hole in the print
+or a discreet spot on the base so it's reachable without opening it up.
 
 LED cathodes go to any GND pin through their resistor. GPIO pins and the I2S
 pins are fixed by the `max98357a` device tree overlay (set up automatically
@@ -69,8 +76,13 @@ A few things that make wiring painless once everything's inside the print:
 1. Flash Raspberry Pi OS Lite to the SD card (Raspberry Pi Imager lets you
    pre-configure a hostname/SSH key, but you do *not* need to pre-configure
    WiFi -- that's what the captive portal is for).
-2. Boot it, SSH in (or use a keyboard/monitor once), clone this repo, and run:
+2. Boot it, SSH in (or use a keyboard/monitor once), and run the installer.
+   It clones the repo itself (into `/opt/gargoyle`, pinned to the latest
+   tagged release), so you don't need to `git clone` it yourself first:
    ```
-   sudo bash scripts/install.sh
+   curl -fsSL https://raw.githubusercontent.com/BenLBurke/haunted_mansion_gargoyle/main/pi-zero/scripts/install.sh | sudo bash
    ```
-3. See [WIFI_SETUP.md](WIFI_SETUP.md) for connecting it to your network.
+   (or clone the repo and run `sudo bash pi-zero/scripts/install.sh` from
+   within it -- same result either way.)
+3. See [WIFI_SETUP.md](WIFI_SETUP.md) for connecting it to your network,
+   and [OTA.md](OTA.md) for how it keeps itself updated afterwards.

@@ -50,6 +50,16 @@ class Config:
     portal_port: int = 80
     connectivity_timeout_seconds: int = 30
 
+    # Hold this pin's button for reset_hold_seconds to forget WiFi and
+    # reboot into setup mode (also re-prompts for which park to track).
+    reset_button_pin: int = 22
+    reset_hold_seconds: float = 3.0
+
+    # OTA updates -- see docs/OTA.md.
+    ota_enabled: bool = True
+    ota_repo: str = "BenLBurke/haunted_mansion_gargoyle"
+    ota_check_interval_hours: float = 24.0
+
     def park_info(self):
         return get_park(self.park)
 
