@@ -49,6 +49,17 @@ async def _flicker_candles(candles):
         await asyncio.sleep_ms(60)
 
 
+async def _watch_reset_button(button):
+    if not button:
+        return
+    import reset_button
+
+    while True:
+        if button.check():
+            reset_button.factory_reset()
+        await asyncio.sleep_ms(100)
+
+
 PAGE_TEMPLATE = """<!doctype html>
 <html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -255,8 +266,9 @@ async def _handle_client(reader, writer, ctx):
         gc.collect()
 
 
-async def _serve(config, ctx, candles):
+async def _serve(config, ctx, candles, button):
     asyncio.create_task(_flicker_candles(candles))
+    asyncio.create_task(_watch_reset_button(button))
     asyncio.create_task(_run_dns_server(AP_IP))
     asyncio.create_task(asyncio.start_server(lambda r, w: _handle_client(r, w, ctx), "0.0.0.0", PORTAL_PORT))
 
@@ -267,10 +279,10 @@ async def _serve(config, ctx, candles):
     await asyncio.sleep_ms(1500)  # let the success response reach the browser
 
 
-def run(config, candles=None):
+def run(config, candles=None, button=None):
     """Blocks, serving the captive portal, until WiFi credentials work. Resets the device on success."""
     ctx = {"config": config, "connected": False}
-    asyncio.run(_serve(config, ctx, candles))
+    asyncio.run(_serve(config, ctx, candles, button))
 
     import machine
 

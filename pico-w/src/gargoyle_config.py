@@ -37,6 +37,14 @@ DEFAULTS = {
     "ap_ssid": "Gargoyle-Setup",
     "ap_password": "hauntedmansion",
     "connectivity_timeout_seconds": 30,
+    # Hold this pin's button for reset_hold_seconds to forget WiFi and
+    # reboot into setup mode (also re-prompts for which park to track).
+    "reset_button_pin": 15,
+    "reset_hold_seconds": 3,
+    # OTA updates -- see docs/OTA.md.
+    "ota_enabled": True,
+    "ota_repo": "BenLBurke/haunted_mansion_gargoyle",
+    "ota_check_interval_hours": 24,
 }
 
 

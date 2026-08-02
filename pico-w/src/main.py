@@ -12,11 +12,13 @@ import time
 
 import gargoyle_config
 import network_setup
+import ota
 from audio import NullSoundPlayer, SoundPlayer
 from candle import make_candle
 from display import ConsoleScreen, Screen, make_display
 from parks import get_park
 from provision import needs_provisioning, run_provisioning
+from reset_button import ResetButton, factory_reset
 from state import StateTracker
 from themeparks_api import ThemeParksApiError, fetch_snapshot
 
@@ -26,6 +28,13 @@ POLL_TICK_MS = 60  # candle flicker update granularity
 def run():
     config = gargoyle_config.load()
 
+    # If we got this far, every module main.py imports (including this one)
+    # compiled and ran its top-level code successfully -- reasonable proof
+    # an OTA update, if one is pending confirmation, is basically sound. See
+    # ota.py and boot.py for the other half of this (rollback if it's NOT
+    # confirmed within a couple of boots).
+    ota.confirm_boot()
+
     # Created before the connectivity check (not after) so the candles keep
     # flickering through the entire boot -- including a stuck-for-30-seconds
     # WiFi join attempt or a stretch in the captive portal -- rather than
@@ -34,9 +43,10 @@ def run():
         make_candle(config["led_pin_candlestick_1"]),
         make_candle(config["led_pin_candlestick_2"]),
     ]
+    button = ResetButton(config["reset_button_pin"], hold_ms=config["reset_hold_seconds"] * 1000)
 
-    if needs_provisioning(config, candles):
-        run_provisioning(config, candles)  # blocks; the device resets itself on success
+    if needs_provisioning(config, candles, button):
+        run_provisioning(config, candles, button)  # blocks; the device resets itself on success
         return
 
     park = get_park(config["park"])
@@ -69,15 +79,25 @@ def run():
     poll_interval_ms = config["poll_interval_seconds"] * 1000
     last_poll = time.ticks_add(time.ticks_ms(), -poll_interval_ms)  # poll immediately on the first loop
 
+    ota_interval_ms = config["ota_check_interval_hours"] * 3600 * 1000
+    last_ota_check = time.ticks_ms()  # don't check immediately -- let the device settle in first
+
     while True:
         now = time.ticks_ms()
 
         for candle in candles:
             candle.step()
 
+        if button.check():
+            factory_reset()  # never returns -- forgets WiFi and resets
+
         if time.ticks_diff(now, last_poll) >= poll_interval_ms:
             last_poll = now
             _poll_and_react(park, park_label, screen, sound, tracker, config)
+
+        if config["ota_enabled"] and time.ticks_diff(now, last_ota_check) >= ota_interval_ms:
+            last_ota_check = now
+            ota.check_and_apply(config)  # resets the device if an update was applied
 
         time.sleep_ms(POLL_TICK_MS)
 

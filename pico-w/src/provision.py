@@ -4,15 +4,23 @@
 # `candles`, if given, is stepped continuously throughout -- both while
 # trying saved credentials and while the captive portal is up -- so there's
 # never a silent, dark stretch that's hard to tell apart from a hang.
+#
+# `button`, if given (a reset_button.ResetButton), is also checked
+# throughout, so a long-press bails out of a stuck connection attempt (or
+# just restarts a setup session) instead of only working once normal
+# operation is reached.
 
 import network_setup
+import reset_button
 
 
-def needs_provisioning(config, candles=None):
+def needs_provisioning(config, candles=None, button=None):
     def tick():
         if candles:
             for candle in candles:
                 candle.step()
+        if button and button.check():
+            reset_button.factory_reset()
 
     saved = network_setup.load_saved_wifi()
     if saved is None:
@@ -35,10 +43,10 @@ def needs_provisioning(config, candles=None):
     return not ok
 
 
-def run_provisioning(config, candles=None):
+def run_provisioning(config, candles=None, button=None):
     """Blocks, serving the setup portal, until WiFi credentials work. The
     device resets itself once that happens, so this never returns normally."""
     import wifi_portal
 
     network_setup.start_ap(config["ap_ssid"], config["ap_password"])
-    wifi_portal.run(config, candles)
+    wifi_portal.run(config, candles, button)
