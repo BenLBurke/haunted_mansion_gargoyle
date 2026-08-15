@@ -5,13 +5,37 @@
 | Part | Notes |
 |---|---|
 | Raspberry Pi Pico W (or Pico 2 W) | Needs the "W" -- plain Pico has no WiFi radio |
-| SSD1306 OLED, 128x64, I2C | Same panel as the Pi Zero build |
+| SSD1306 OLED, 128x64, I2C **or** ILI9341 2.8" TFT, 320x240, SPI | Pick one -- see "Display options" below |
 | 2x 5mm LEDs, warm/amber or "flicker flame" tint | One per candlestick |
 | 2x 220-330Ω resistors | Current limiting for the LEDs |
 | MAX98357A I2S 3W Class-D amp breakout | The Pico has no analog audio out at all, so this is required for sound |
 | Small 4-8Ω speaker, 28-40mm | Whatever fits the print's speaker cavity |
 | 5V micro-USB (or VSYS) power supply | |
 | Hookup wire, heatshrink | |
+
+## Display options
+
+`config.json`'s `display_driver` picks which panel `main.py` drives -- the
+rendering code (`renderer.py`, `animations.py`, `big_digits.py`) is
+identical either way, so switching is wiring + one config field, not a code
+change.
+
+- **`"ssd1306"` (default)**: the same 128x64 I2C OLED as the Pi Zero build.
+  Small and cheap, mounts flush in a tight print.
+- **`"ili9341"`**: a 2.8" 320x240 SPI color TFT (the common "Hosyond"/generic
+  ILI9341 breakout, including the ones sold as an "Arduino shield" -- the
+  shield header is just a mounting shape, not an electrical requirement, and
+  the chip itself is native 3.3V logic so it's safe directly on the Pico's
+  GPIO). Bigger and easier to read across a room, at 18x the pixel count.
+  Set `display_width`/`display_height` to `320`/`240` alongside
+  `display_driver` when using this option.
+
+  Internally the app still renders in 1-bit monochrome exactly like the
+  OLED path (a full-color 320x240 RGB565 frame buffer would be 150KB+ --
+  more than half the Pico's 264KB of RAM, and won't fit next to the WiFi/TLS
+  stack) and only expands to color at the very last step, streamed to the
+  panel a few rows at a time. See `tft_render.py`/`tft_screen.py` for the
+  conversion.
 
 ## GPIO wiring (GP numbers)
 
@@ -34,18 +58,37 @@ Pico. Everything below avoids them.
 | MAX98357A GND | GND | any |
 | Reset button (other leg to GND) | GP15 | 20 |
 
+If using the **ILI9341 TFT** instead of the OLED, wire it to SPI1 instead
+of the OLED's I2C pins (`display_driver: "ili9341"` in `config.json`):
+
+| Signal | GPIO | Physical pin |
+|---|---|---|
+| TFT SCK (CLK) | GP10 | 14 |
+| TFT MOSI (SDI) | GP11 | 15 |
+| TFT MISO (SDO) | GP8 | 11 |
+| TFT CS | GP9 | 12 |
+| TFT DC (D/C or RS) | GP12 | 16 |
+| TFT RST | GP13 | 17 |
+| TFT VCC | 3V3 | 36 |
+| TFT GND | GND | any |
+| TFT LED (backlight) | 3V3 | 36 (most breakouts light up as soon as this is powered) |
+
 The reset button just needs a momentary push button between GP15 and any
 GND pin -- it's wired with the internal pull-up enabled in software, so no
 external resistor is needed. Hold it for `reset_hold_seconds` (default 3s)
 to forget WiFi and reboot into setup mode.
 
-Two hard constraints if you change any of these in `config.json`:
+Three hard constraints if you change any of these in `config.json`:
 
 - **I2S**: the `ws` pin must always be `sck + 1` (a MicroPython/RP2040
   requirement, not a suggestion) -- so if you move `i2s_sck_pin` off GP16,
   `i2s_ws_pin` must move to match.
 - **I2C**: GP4/GP5 are the Pico's default I2C0 pins, but any I2C-capable
   GPIO pair works if you update `i2c_scl_pin`/`i2c_sda_pin` together.
+- **SPI**: GP8/GP10/GP11 are the Pico's default SPI1 pins; any SPI-capable
+  GPIO set works if you update the matching `tft_*_pin` fields together (CS,
+  DC, and RST are plain GPIO and can move independently of the SPI bus
+  itself).
 
 LED cathodes go to any GND pin through their resistor. All the pins above
 are plain GPIO otherwise, so PWM (candles), I2C (display), and I2S (audio)

@@ -20,6 +20,20 @@ DEFAULTS = {
     "display_width": 128,
     "display_height": 64,
     "display_i2c_address": 0x3C,
+    # "ssd1306" (default, 128x64 I2C OLED) or "ili9341" (2.8"/320x240 SPI
+    # TFT) -- see docs/HARDWARE.md. Switching to ili9341 also needs
+    # display_width/display_height set to 320/240.
+    "display_driver": "ssd1306",
+    "tft_spi_id": 1,
+    "tft_sck_pin": 10,
+    "tft_mosi_pin": 11,
+    "tft_miso_pin": 8,
+    "tft_cs_pin": 9,
+    "tft_dc_pin": 12,
+    "tft_rst_pin": 13,
+    "tft_rotation": 90,  # 0/90/180/270 -- rotate if the image comes up sideways
+    "tft_fg_color": 0xFD20,  # RGB565, warm amber (candlelight) by default
+    "tft_bg_color": 0x0000,  # RGB565, black
     "i2s_id": 0,
     "i2s_sck_pin": 16,
     "i2s_ws_pin": 17,  # must always be i2s_sck_pin + 1, see docs/HARDWARE.md

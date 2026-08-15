@@ -53,14 +53,7 @@ def run():
     park_label = park.short_label
 
     if config["display_enabled"]:
-        device = make_display(
-            config["i2c_id"],
-            config["i2c_scl_pin"],
-            config["i2c_sda_pin"],
-            config["display_width"],
-            config["display_height"],
-            config["display_i2c_address"],
-        )
+        device = make_display(config)
         screen = Screen(device, config["display_width"], config["display_height"])
     else:
         print("display_enabled is false -- printing screen contents to the console instead")

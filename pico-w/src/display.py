@@ -4,12 +4,39 @@ import animations
 import renderer
 
 
-def make_display(i2c_id, scl_pin, sda_pin, width, height, address):
+def make_display(config):
+    """Builds whichever display device config["display_driver"] selects.
+    Both devices are framebuf.FrameBuffer subclasses with the same
+    fill/rect/ellipse/poly/line/text + show() surface, so Screen below
+    doesn't need to know or care which one it got."""
+    driver = config.get("display_driver", "ssd1306")
+
+    if driver == "ili9341":
+        from tft_screen import make_tft
+
+        return make_tft(
+            config["tft_spi_id"],
+            config["tft_sck_pin"],
+            config["tft_mosi_pin"],
+            config["tft_miso_pin"],
+            config["tft_cs_pin"],
+            config["tft_dc_pin"],
+            config["tft_rst_pin"],
+            config["display_width"],
+            config["display_height"],
+            config["tft_rotation"],
+            config["tft_fg_color"],
+            config["tft_bg_color"],
+        )
+
+    if driver != "ssd1306":
+        raise ValueError("unknown display_driver: {}".format(driver))
+
     from machine import I2C, Pin
     from ssd1306 import SSD1306_I2C
 
-    i2c = I2C(i2c_id, scl=Pin(scl_pin), sda=Pin(sda_pin), freq=400_000)
-    return SSD1306_I2C(width, height, i2c, addr=address)
+    i2c = I2C(config["i2c_id"], scl=Pin(config["i2c_scl_pin"]), sda=Pin(config["i2c_sda_pin"]), freq=400_000)
+    return SSD1306_I2C(config["display_width"], config["display_height"], i2c, addr=config["display_i2c_address"])
 
 
 class Screen:

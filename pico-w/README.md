@@ -6,7 +6,9 @@ maintain -- at the cost of everything Linux gives you for free (systemd,
 NetworkManager, a real filesystem, `pip`). Feature set is the same:
 
 - Each candlestick's LED flickers like a real candle flame (PWM).
-- A small OLED screen shows the current Haunted Mansion wait time.
+- A small OLED screen shows the current Haunted Mansion wait time -- or,
+  optionally, a larger 2.8" color TFT (see
+  [docs/HARDWARE.md](docs/HARDWARE.md#display-options)).
 - A ghost/bat animation plays across the screen whenever the wait changes.
 - A speaker dings when the wait goes down, and plays a cue when the park
   opens and closes for the day (I2S -- the Pico has no analog audio out).
@@ -32,7 +34,7 @@ underneath. Everything here is written against MicroPython's own
 | | Pi Zero | Pico W |
 |---|---|---|
 | HTTP client | `requests` | vendored `requests.py` from micropython-lib (`lib/requests.py`) |
-| OLED | Pillow + `luma.oled` | `framebuf` + vendored `ssd1306.py` (`lib/ssd1306.py`) |
+| OLED | Pillow + `luma.oled` | `framebuf` + vendored `ssd1306.py` (`lib/ssd1306.py`); optional 2.8" ILI9341 SPI TFT via vendored `lib/ili9341.py` + `tft_screen.py` (see docs/HARDWARE.md) |
 | Big wait-time number | Pillow bitmap font | hand-drawn chunky 7-segment digits (`big_digits.py`) -- no font asset needed |
 | Sound playback | `aplay` over ALSA | raw WAV parsing + `machine.I2S` streaming (`audio.py`) |
 | WiFi provisioning | NetworkManager hotspot + Flask + dnsmasq redirect | `network.WLAN` AP mode + hand-rolled DNS spoofing + `asyncio` HTTP server (`wifi_portal.py`) |
@@ -48,10 +50,12 @@ Pi-side counterparts and can be unit tested the same way.
 ## Developing without the hardware
 
 The device-only modules (`display.py`, `candle.py`'s hardware factory,
-`audio.py`'s I2S bits, `network_setup.py`, `wifi_portal.py`) import
-`machine`/`network` at call time, not at module level, so they can't run
-off-device -- but everything else can. Run the portable-logic test suite
-from this directory:
+`audio.py`'s I2S bits, `network_setup.py`, `wifi_portal.py`, `tft_screen.py`)
+import `machine`/`network`/`framebuf` at call/module time, not lazily behind
+a pure-logic layer, so they can't run off-device -- but everything else can,
+including the ILI9341 TFT's monochrome-to-RGB565 conversion and chunked
+streaming logic, split out into `tft_render.py` for exactly this reason. Run
+the portable-logic test suite from this directory:
 
 ```
 python3 -m venv venv && source venv/bin/activate
@@ -61,10 +65,12 @@ pytest
 
 This covers wait-time parsing/formatting, wait-time/park-open change
 detection, the candle flicker algorithm, config loading, the park registry,
-reset-button hold-duration detection, and the OTA updater's file-swap and
-rollback logic (`ota.py`/`boot.py`, verified against a real MicroPython
-interpreter too, not just CPython) -- the same scope of coverage as the Pi
-Zero build's tests, minus whatever genuinely needs real hardware or a real
+reset-button hold-duration detection, the ILI9341 TFT's byte-to-RGB565
+lookup table and chunked streaming (`tft_render.py`), and the OTA updater's
+file-swap and rollback logic (`ota.py`/`boot.py`, verified against a real
+MicroPython interpreter too, not just CPython) -- the same scope of
+coverage as the Pi Zero build's tests, minus whatever genuinely needs real
+hardware or a real
 network stack to exercise.
 
 ## Testing without the screen or speaker
