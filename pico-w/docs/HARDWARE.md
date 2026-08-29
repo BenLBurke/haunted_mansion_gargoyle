@@ -73,6 +73,26 @@ of the OLED's I2C pins (`display_driver: "ili9341"` in `config.json`):
 | TFT GND | GND | any |
 | TFT LED (backlight) | 3V3 | 36 (most breakouts light up as soon as this is powered) |
 
+These modules typically break out two separate headers -- use the 14-pin
+one, which carries the LCD/touch interface. The 4-pin header (usually near
+the microSD socket on the back) is a separate SPI bus for the SD card
+reader; this project doesn't use the SD slot or the touchscreen, so leave
+that header and the touch pins on the 14-pin side unconnected. Labels vary
+slightly by manufacturer, but the 14-pin header is generally:
+
+| Silkscreen label | What it is | Wire to |
+|---|---|---|
+| VCC | 3.3V power | 3V3 |
+| GND | Ground | GND |
+| CS | Chip select | GP9 |
+| RESET | Reset | GP13 |
+| DC (or D/C, RS) | Data/command | GP12 |
+| SDI (or MOSI) | SPI data in | GP11 |
+| SCK | SPI clock | GP10 |
+| LED | Backlight | 3V3 |
+| SDO (or MISO) | SPI data out | GP8 |
+| T_CLK, T_CS, T_DIN, T_DO, T_IRQ | Touch controller | Not used -- leave unconnected |
+
 The reset button just needs a momentary push button between GP15 and any
 GND pin -- it's wired with the internal pull-up enabled in software, so no
 external resistor is needed. Hold it for `reset_hold_seconds` (default 3s)
