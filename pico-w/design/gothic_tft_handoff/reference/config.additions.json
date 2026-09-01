@@ -1,0 +1,27 @@
+{
+  "_comment": "Config delta for the 320x240 SPI TFT. REMOVE the four i2c_* / display_i2c_address keys from config.example.json and gargoyle_config.py defaults; ADD everything below. Pin numbers are suggestions -- verify against the actual wiring before flashing. test_config.py will need updating to match.",
+
+  "_remove": ["i2c_id", "i2c_scl_pin", "i2c_sda_pin", "display_i2c_address"],
+
+  "spi_id": 0,
+  "spi_baudrate": 40000000,
+  "spi_sck_pin": 18,
+  "spi_mosi_pin": 19,
+  "spi_cs_pin": 17,
+  "spi_dc_pin": 15,
+  "spi_rst_pin": 14,
+  "spi_backlight_pin": 13,
+
+  "display_width": 320,
+  "display_height": 240,
+  "display_rotation": 90,
+
+  "_unchanged": {
+    "display_enabled": "keep -- ConsoleScreen path still works",
+    "led_pin_candlestick_1": "keep -- physical candle LED, unrelated to the on-screen flame",
+    "led_pin_candlestick_2": "keep",
+    "poll_interval_seconds": "keep -- 60 to 120 suits the design's data-change-driven lightning",
+    "i2s_*": "keep -- audio is untouched",
+    "park": "keep -- drives the footer label via parks.short_label"
+  }
+}

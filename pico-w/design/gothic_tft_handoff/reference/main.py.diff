@@ -1,0 +1,88 @@
+# The only changes needed in pico-w/src/main.py, as a unified diff.
+#
+# Three edits:
+#   1. paint the static scene once after constructing the screen
+#   2. advance the on-screen flame/ghost every loop, alongside candle.step()
+#   3. on a fetch failure, KEEP the last known number instead of wiping it
+#
+# Everything else in main.py -- the cooperative loop, provisioning, audio
+# cues, the crash-and-reset handler -- is unchanged.
+
+--- a/pico-w/src/main.py
++++ b/pico-w/src/main.py
+@@ config construction @@
+     if config["display_enabled"]:
+         device = make_display(
+-            config["i2c_id"],
+-            config["i2c_scl_pin"],
+-            config["i2c_sda_pin"],
++            config["spi_id"],
++            config["spi_sck_pin"],
++            config["spi_mosi_pin"],
++            config["spi_cs_pin"],
++            config["spi_dc_pin"],
++            config["spi_rst_pin"],
++            config["spi_backlight_pin"],
+             config["display_width"],
+             config["display_height"],
+-            config["display_i2c_address"],
++            config["display_rotation"],
++            config["spi_baudrate"],
+         )
+-        screen = Screen(device, config["display_width"], config["display_height"])
++        screen = Screen(device, config["display_width"], config["display_height"],
++                        park_label=park_label)
+     else:
+         print("display_enabled is false -- printing screen contents to the console instead")
+         screen = ConsoleScreen()
+
+@@ before the poll loop @@
+     tracker = StateTracker()
++    screen.begin()          # paint the static gothic scene once
+     screen.show_message("Waking up...")
+     sound.play("startup")
+
+@@ the main loop @@
+     while True:
+         now = time.ticks_ms()
+
+         for candle in candles:
+             candle.step()
+
++        # advances the on-screen candle flame (4-step, 1.6s) and the ghost's
++        # occasional drift pass. Cheap and non-blocking: ~448 bytes of SPI
++        # every 400ms. Distinct from the physical candle LEDs above.
++        screen.tick()
++
+         if time.ticks_diff(now, last_poll) >= poll_interval_ms:
+             last_poll = now
+             _poll_and_react(park, park_label, screen, sound, tracker, config)
+
+@@ _poll_and_react @@
+ def _poll_and_react(park, park_label, screen, sound, tracker, config):
+     try:
+         snapshot = fetch_snapshot(park)
+     except ThemeParksApiError as exc:
+         print("themeparks.wiki request failed:", exc)
+-        screen.show_message("Lost the signal...", "retrying")
++        # Keep the last known number on screen. A stale wait time is more
++        # useful on an always-on ambient display than an error message, and
++        # the panel should never look broken. show_stale() draws only a small
++        # dim corner mark and leaves the numeral untouched.
++        if tracker.current is not None:
++            screen.show_stale()
++        else:
++            # Nothing has ever been fetched, so there is no number to keep.
++            screen.show_message("Lost the signal...", "retrying")
+         return
+
+     reactions = tracker.update(snapshot)
+     connected = network_setup.is_connected()
+
+# NOTE: `park` and `park_label` must now be resolved BEFORE the display block,
+# since Screen takes park_label to bake the footer into the static scene.
+# Move the two `get_park` lines above the `if config["display_enabled"]:` block.
+#
+# NOTE: last-known values are intentionally NOT persisted across a reboot.
+# After machine.reset() the number could be hours stale with no way to signal
+# how stale, so boot shows "Waking up..." and waits for a real fetch.
