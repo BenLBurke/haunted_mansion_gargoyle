@@ -1,6 +1,6 @@
 # Static gothic mansion scene for the 320x240 SPI TFT.
 #
-# Drawn ONCE at boot (see display_tft.Screen.begin), then small patches are
+# Drawn ONCE at boot (see display.Screen.begin), then small patches are
 # redrawn on demand under moving elements. There is deliberately no full
 # framebuffer: 320*240*2 = 153,600 bytes against 264KB of SRAM, and WiFi/TLS
 # wants 40-50KB during a request.
@@ -44,21 +44,31 @@ WIN_LIT  = ((255, 208, 143), (224, 144, 47), (148, 87, 28))
 WIN_DIM1 = ((160, 108, 46), (91, 53, 20), (56, 32, 12))
 WIN_DIM2 = ((201, 135, 58), (126, 77, 28), (74, 44, 16))
 
+# The sky gradient's 3 stops, as (t, rgb) over the full panel height -- used
+# both by draw_sky() and by restore() so an erased patch samples the SAME
+# curve the background was actually painted with, rather than treating
+# itself as its own independent 0..1 gradient (that mismatch was the ghost's
+# visible trailing line/flicker: every erase painted the wrong color, then
+# the ghost got redrawn on top of it).
+SKY_STOPS = ((0.0, SKY_TOP), (0.56, SKY_MID), (1.0, SKY_BOTTOM))
+
 # ---- dirty rects (x, y, w, h), top-origin ----
-R_NUMERAL = (118, 66, 84, 88)
+# Full tombstone width (matches the numeral div's real CSS: width:100% of
+# the 150px stone) -- it was previously only 84px, narrower than a 2-digit
+# number actually renders at (96px), which silently broke centering.
+R_NUMERAL = (85, 66, 150, 88)
 # Message div is CSS left:12,top:44,right:12,bottom:20 within the 150x158
 # tombstone: h = 158-44-20 = 94, not the shorter 62 this was originally
 # transcribed as -- that left an unrestored 28px gap between this rect and
 # the separately-cleared unit-label strip, which could show stale pixels.
 R_MESSAGE = (97, 76, 126, 94)
-R_FLAME   = (16, 186, 14, 16)
 GHOST_W, GHOST_H, GHOST_Y = 26, 33, 150
 
 # Tombstone box, top-origin
 TS_X, TS_Y, TS_W, TS_H = 85, 32, 150, 158
-
-# On-screen candlestick box: 20 wide, 40 tall, sitting 46px up from the bottom
-CS_X, CS_Y, CS_W, CS_H = 8, H - 46 - 40, 20, 40
+TS_R = TS_W // 2            # dome radius
+TS_CX = TS_X + TS_R         # dome center x
+TS_DOME_CY = TS_Y + TS_R    # dome center y -- also where the body starts
 
 
 def _fb(y_from_bottom, height=0):
@@ -70,6 +80,18 @@ def _lerp(a, b, t):
     return (int(a[0] + (b[0] - a[0]) * t),
             int(a[1] + (b[1] - a[1]) * t),
             int(a[2] + (b[2] - a[2]) * t))
+
+
+def _sample_gradient(stops, t):
+    """Color at position `t` (0..1) along a multi-stop (t, rgb) gradient."""
+    t = max(0.0, min(1.0, t))
+    lo, hi = stops[0], stops[-1]
+    for i in range(len(stops) - 1):
+        if stops[i][0] <= t <= stops[i + 1][0]:
+            lo, hi = stops[i], stops[i + 1]
+            break
+    span = max(1e-6, hi[0] - lo[0])
+    return _lerp(lo[1], hi[1], (t - lo[0]) / span)
 
 
 class Scene:
@@ -123,33 +145,39 @@ class Scene:
                 self.d.fill_rectangle(x, y + row, w, 1, color)
 
     def v_gradient(self, x, y, w, h, stops, bands=40):
-        """Vertical gradient in horizontal bands. stops = list of (t, rgb)."""
+        """Vertical gradient in horizontal bands. stops = list of (t, rgb),
+        `t` relative to this call's own [0, h) span (used for self-contained
+        shapes like the tombstone). For a patch that needs to match a larger
+        gradient it's embedded in (e.g. a chunk of sky), use
+        v_gradient_absolute() instead so `t` lines up with the real
+        background rather than restarting at 0 for the patch."""
         step = max(1, h // bands)
         for row in range(0, h, step):
             t = row / max(1, h - 1)
-            lo = stops[0]
-            hi = stops[-1]
-            for i in range(len(stops) - 1):
-                if stops[i][0] <= t <= stops[i + 1][0]:
-                    lo, hi = stops[i], stops[i + 1]
-                    break
-            span = max(1e-6, hi[0] - lo[0])
-            self.d.fill_rectangle(x, y + row, w, min(step, h - row),
-                                  self.rgb(_lerp(lo[1], hi[1], (t - lo[0]) / span)))
+            color = self.rgb(_sample_gradient(stops, t))
+            self.d.fill_rectangle(x, y + row, w, min(step, h - row), color)
+
+    def v_gradient_absolute(self, x, y, w, h, stops, total_h, y0=0, bands=40):
+        """Like v_gradient(), but `t` is computed from the patch's real
+        position within a `total_h`-tall gradient starting at `y0`, not
+        reset to 0 at the top of the patch -- for restoring a sub-rectangle
+        of a larger gradient so it actually matches its surroundings."""
+        step = max(1, h // bands)
+        for row in range(0, h, step):
+            t = (y + row - y0) / max(1, total_h - 1)
+            color = self.rgb(_sample_gradient(stops, t))
+            self.d.fill_rectangle(x, y + row, w, min(step, h - row), color)
 
     # ---- static passes ----
 
     def draw_all(self):
         self.draw_sky()
         self.draw_facade()
-        self.draw_candlestick_static()
         self.draw_tombstone()
         self.draw_chrome()
 
     def draw_sky(self):
-        self.v_gradient(0, 0, W, H,
-                        [(0.0, SKY_TOP), (0.56, SKY_MID), (1.0, SKY_BOTTOM)],
-                        bands=48)
+        self.v_gradient(0, 0, W, H, SKY_STOPS, bands=48)
         for (x, y, c) in ((30, 22, STAR_A), (112, 16, STAR_B), (262, 26, STAR_A)):
             self.d.fill_rectangle(x, y, 1, 1, self.rgb(c))
         # moon: 26px circle centered ~(283, 29), with two dim glow rings
@@ -236,38 +264,24 @@ class Scene:
             if span > 0:
                 self.d.fill_rectangle(cx - span, cy + dy, span * 2, 1, color)
 
-    def draw_candlestick_static(self):
-        """Everything except the flame, which animations_tft owns."""
-        d, x, y = self.d, CS_X, CS_Y
-        base = y + CS_H
-        d.fill_circle(x + 10, base - 2, 6, self.rgb((107, 83, 48)))
-        d.fill_circle(x + 10, base - 4, 3, self.rgb((138, 107, 58)))
-        d.fill_rectangle(x + 9, base - 16, 3, 12, self.rgb((125, 97, 54)))
-        d.fill_circle(x + 10, base - 11, 4, self.rgb((143, 111, 60)))
-        d.fill_rectangle(x + 5, base - 18, 10, 3, self.rgb((138, 107, 58)))
-        d.fill_rectangle(x + 7, base - 28, 6, 10, self.rgb((244, 236, 215)))
-        d.fill_rectangle(x + 7, base - 28, 2, 10, self.rgb((141, 128, 105)))
-        d.fill_rectangle(x + 6, base - 25, 2, 5, self.rgb((239, 230, 207)))
-
     def draw_tombstone(self):
         d = self.d
-        r = TS_W // 2
-        cx = TS_X + r
+        r, cx = TS_R, TS_CX
         # dome
-        d.fill_circle(cx, TS_Y + r, r, self.rgb(STONE_TOP))
+        d.fill_circle(cx, TS_DOME_CY, r, self.rgb(STONE_TOP))
         # body gradient below the dome
-        self.v_gradient(TS_X, TS_Y + r, TS_W, TS_H - r,
+        self.v_gradient(TS_X, TS_DOME_CY, TS_W, TS_H - r,
                         [(0.0, STONE_MID), (1.0, STONE_BOT)], bands=24)
         # blend the dome into the body
-        self.v_gradient(TS_X, TS_Y + r - 12, TS_W, 12,
+        self.v_gradient(TS_X, TS_DOME_CY - 12, TS_W, 12,
                         [(0.0, STONE_TOP), (1.0, STONE_MID)], bands=6)
         # 1px top highlight
         d.fill_rectangle(cx - 20, TS_Y + 1, 40, 1, self.rgb((226, 218, 240)))
         # engraved inner border (approximate: dome ring + two side rules)
         edge = self.rgb(STONE_EDGE)
-        d.draw_circle(cx, TS_Y + r, r - 6, edge)
-        d.fill_rectangle(TS_X + 6, TS_Y + r, 1, TS_H - r - 6, edge)
-        d.fill_rectangle(TS_X + TS_W - 7, TS_Y + r, 1, TS_H - r - 6, edge)
+        d.draw_circle(cx, TS_DOME_CY, r - 6, edge)
+        d.fill_rectangle(TS_X + 6, TS_DOME_CY, 1, TS_H - r - 6, edge)
+        d.fill_rectangle(TS_X + TS_W - 7, TS_DOME_CY, 1, TS_H - r - 6, edge)
         d.fill_rectangle(TS_X + 6, TS_Y + TS_H - 6, TS_W - 12, 1, edge)
         # static "WAIT TIME" label
         d.draw_text8x8(cx - 36, TS_Y + 20, "WAIT TIME", self.rgb(LABEL_DIM))
@@ -286,27 +300,49 @@ class Scene:
     # ---- patch restore, for dirty rects ----
 
     def restore(self, rect):
-        """Redraw the static background inside `rect` only.
-
-        The cheap approach used here: the numeral and message rects both sit
-        entirely inside the tombstone, and the flame/ghost rects sit over sky
-        or facade, so each patch only needs its own local source redrawn and
-        clipped. If clipping proves fiddly, switch to the bg.raw fallback
-        described in the handoff README.
-        """
+        """Redraw the static background inside `rect` only. Every patch this
+        app actually uses (the numeral, the message block, the ghost) sits
+        either entirely inside the tombstone or entirely in open sky, so
+        those are the two cases handled here -- if a future patch straddles
+        the facade too, this needs a third branch for it."""
         x, y, w, h = rect
         if _rect_inside(rect, (TS_X, TS_Y, TS_W, TS_H)):
-            t0 = (y - (TS_Y + TS_W // 2)) / max(1, TS_H - TS_W // 2)
-            t1 = (y + h - (TS_Y + TS_W // 2)) / max(1, TS_H - TS_W // 2)
-            self.v_gradient(x, y, w, h,
-                           [(0.0, _lerp(STONE_MID, STONE_BOT, max(0.0, min(1.0, t0)))),
-                            (1.0, _lerp(STONE_MID, STONE_BOT, max(0.0, min(1.0, t1))))],
-                           bands=12)
+            self._restore_tombstone_patch(x, y, w, h)
         else:
-            # sky/facade patch: repaint sky band, then re-run the facade clipped.
-            # TODO: add clipping to draw_facade rather than redrawing all of it.
-            self.v_gradient(x, y, w, h,
-                           [(0.0, SKY_MID), (1.0, SKY_BOTTOM)], bands=8)
+            self._restore_sky_patch(x, y, w, h)
+
+    def _restore_sky_patch(self, x, y, w, h):
+        # Samples the SAME gradient draw_sky() painted, at this patch's real
+        # position, so an erased patch blends into its surroundings instead
+        # of flashing a mismatched color (that mismatch was the ghost's
+        # visible trailing line and the "blinking" as it crossed the screen).
+        self.v_gradient_absolute(x, y, w, h, SKY_STOPS, total_h=H, y0=0, bands=max(1, h // 4))
+
+    def _restore_tombstone_patch(self, x, y, w, h):
+        """Row-by-row restore that respects the dome's actual circular
+        silhouette. A naive rectangular fill here (the original approach)
+        painted stone-colored pixels into the corners outside the dome's
+        curve -- visible as a grey box around the numeral, since R_NUMERAL
+        starts well up inside the dome, not just the straight-sided body."""
+        r, cx = TS_R, TS_CX
+        for row_y in range(y, y + h):
+            if row_y < TS_DOME_CY:
+                dy = TS_DOME_CY - row_y
+                half = int((r * r - dy * dy) ** 0.5) if dy <= r else 0
+                left_edge, right_edge = cx - half, cx + half
+                if x < left_edge:
+                    self._restore_sky_patch(x, row_y, min(w, left_edge - x), 1)
+                if right_edge < x + w:
+                    start = max(x, right_edge)
+                    self._restore_sky_patch(start, row_y, x + w - start, 1)
+                seg_x = max(x, left_edge)
+                seg_w = min(x + w, right_edge) - seg_x
+                if seg_w > 0:
+                    self.d.fill_rectangle(seg_x, row_y, seg_w, 1, self.rgb(STONE_TOP))
+            else:
+                t = (row_y - TS_DOME_CY) / max(1, (TS_Y + TS_H) - TS_DOME_CY)
+                color = self.rgb(_sample_gradient(((0.0, STONE_MID), (1.0, STONE_BOT)), t))
+                self.d.fill_rectangle(x, row_y, w, 1, color)
 
 
 def _rect_inside(inner, outer):

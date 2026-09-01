@@ -40,23 +40,52 @@ def test_facade_elements_stay_within_the_panel_bounds():
             assert y + h <= scene.H + 1, (name, args)
 
 
-def test_candlestick_and_lit_window_do_not_overlap():
-    """The candlestick and the lit lancet window used to sit on top of each
-    other (a real transcription bug in the facade's y-offsets) -- their
-    boxes should be disjoint."""
-    cs_x, cs_y, cs_w, cs_h = scene.CS_X, scene.CS_Y, scene.CS_W, scene.CS_H
-    # lit window: x=18, w=8, bottom=24, h=17 -> top = H - 24 - 17
-    win_x, win_w = 18, 8
-    win_y = scene.H - 24 - 17
-    win_h = 17
-
-    x_overlap = cs_x < win_x + win_w and win_x < cs_x + cs_w
-    y_overlap = cs_y < win_y + win_h and win_y < cs_y + cs_h
-    assert not (x_overlap and y_overlap)
+def test_r_numeral_spans_the_full_tombstone_width():
+    # A 2-digit number renders 96px wide (box_w=44, gap=8) -- R_NUMERAL used
+    # to be only 84px wide, narrower than that, which silently broke
+    # centering (nothing to center *within* once the content is wider than
+    # the box). It should span the tombstone's actual full width (150px).
+    x, y, w, h = scene.R_NUMERAL
+    assert w == scene.TS_W
+    assert x == scene.TS_X
 
 
 def test_restore_handles_both_tombstone_and_sky_patches():
     s = scene.Scene(FakeDevice())
     s.draw_all()
-    s.restore(scene.R_NUMERAL)  # inside the tombstone
-    s.restore((0, 100, 26, 33))  # a sky/facade patch (roughly the ghost's rect)
+    s.restore(scene.R_NUMERAL)  # inside the tombstone, overlaps the round dome
+    s.restore((0, 100, 26, 33))  # a sky patch (roughly the ghost's rect)
+
+
+def test_sky_patch_restore_matches_the_real_gradient_at_that_position():
+    """The ghost's visible trailing line/flicker was restore() treating each
+    erased patch as its own independent 0..1 gradient instead of sampling
+    the real sky gradient at the patch's actual position. A patch restored
+    near the bottom of the sky should come out close to SKY_BOTTOM, not
+    SKY_MID (which is what a "restart at 0" gradient would produce)."""
+    s = scene.Scene(FakeDevice())
+    s._restore_sky_patch(0, 230, 26, 10)
+    fills = [args for (name, args, _kw) in s.d.calls if name == "fill_rectangle"]
+    assert fills
+    last_color = fills[-1][-1]
+    # rgb() on FakeDevice just returns the tuple unchanged
+    dist_to_bottom = sum(abs(a - b) for a, b in zip(last_color, scene.SKY_BOTTOM))
+    dist_to_mid = sum(abs(a - b) for a, b in zip(last_color, scene.SKY_MID))
+    assert dist_to_bottom < dist_to_mid
+
+
+def test_tombstone_patch_restore_leaves_corners_outside_the_dome_as_sky():
+    """R_NUMERAL starts well up inside the round dome, not just the
+    straight-sided body below it. A naive rectangular restore painted stone
+    color into the corners outside the dome's curve too -- visible as a
+    grey box around the numeral. The restored corner just inside a wide
+    patch near the top of the dome should come out as sky, not stone."""
+    s = scene.Scene(FakeDevice())
+    # A row near the very top of the dome, spanning past the dome's edges.
+    s._restore_tombstone_patch(scene.TS_X, scene.TS_Y + 2, scene.TS_W, 1)
+    fills = [args for (name, args, _kw) in s.d.calls if name == "fill_rectangle"]
+    # the leftmost fill on that row should be a sky color, not a stone color
+    first_color = fills[0][-1]
+    dist_to_sky = sum(abs(a - b) for a, b in zip(first_color, scene.SKY_TOP))
+    dist_to_stone = sum(abs(a - b) for a, b in zip(first_color, scene.STONE_TOP))
+    assert dist_to_sky < dist_to_stone

@@ -82,9 +82,8 @@ def run():
         for candle in candles:
             candle.step()
 
-        # Advances the on-screen candle flame (4-step, 1.6s) and the ghost's
-        # occasional drift pass. Cheap and non-blocking: ~448 bytes of SPI
-        # every 400ms. Distinct from the physical candle LEDs above.
+        # Advances the ghost's occasional drift pass. Cheap and non-blocking
+        # -- most calls are a no-op until the next pass is actually due.
         screen.tick()
 
         if button.check():

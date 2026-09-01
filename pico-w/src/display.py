@@ -51,7 +51,6 @@ class Screen:
         self.height = height
         self.park_label = park_label
         self.scene = Scene(device)
-        self._flame = animations.FlameFlicker(self.scene)
         self._ghost = animations.GhostDrift(self.scene)
 
     def begin(self):
@@ -63,7 +62,6 @@ class Screen:
 
     def tick(self):
         """Cheap, non-blocking. Call every loop alongside candle.step()."""
-        self._flame.tick()
         self._ghost.tick()
 
     def show_snapshot(self, snapshot, park_label, connected):

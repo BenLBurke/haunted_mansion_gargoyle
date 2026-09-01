@@ -35,18 +35,6 @@ def _scene():
     return s
 
 
-def test_flame_flicker_cycles_through_all_four_steps():
-    s = _scene()
-    flame = animations.FlameFlicker(s)
-    flame._last = 0  # force every tick() to be "due"
-    seen = set()
-    for _ in range(8):
-        flame._last = 0
-        flame.tick()
-        seen.add(flame._i)
-    assert seen == {0, 1, 2, 3}
-
-
 def test_ghost_drift_eventually_completes_a_pass():
     s = _scene()
     ghost = animations.GhostDrift(s)
