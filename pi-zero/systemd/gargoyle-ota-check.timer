@@ -1,0 +1,12 @@
+[Unit]
+Description=Periodically check for gargoyle OTA updates
+
+[Timer]
+OnBootSec=15min
+# install.sh rewrites OnUnitActiveSec to match ota_check_interval_hours from
+# config.yaml at install time -- this 24h is just the fallback default.
+OnUnitActiveSec=24h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

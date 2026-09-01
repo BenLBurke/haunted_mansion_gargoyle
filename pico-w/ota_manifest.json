@@ -1,0 +1,24 @@
+{
+  "version": "1.0.0",
+  "files": [
+    "animations.py",
+    "audio.py",
+    "big_digits.py",
+    "candle.py",
+    "display.py",
+    "gargoyle_config.py",
+    "lib/requests.py",
+    "lib/ssd1306.py",
+    "main.py",
+    "network_setup.py",
+    "ota.py",
+    "parks.py",
+    "provision.py",
+    "renderer.py",
+    "reset_button.py",
+    "state.py",
+    "themeparks_api.py",
+    "version.json",
+    "wifi_portal.py"
+  ]
+}

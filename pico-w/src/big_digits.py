@@ -1,7 +1,14 @@
-# Chunky calculator-style digits so the wait-time number reads clearly on a
-# tiny monochrome OLED without needing a bitmap font asset. The built-in
-# framebuf 8x8 font is fine for labels but too small to be the star of the
-# screen the way the number needs to be.
+# Slab-serif 7-segment digits for the tombstone numeral -- procedural, no
+# font asset, keeping the "no font asset" convention of the original OLED
+# build's calculator-style digits. Restyled per the gothic-mansion design
+# brief to read as engraved stone rather than a calculator display:
+# heavier vertical stems than horizontals, a serif cap block at each loose
+# stroke terminal, and rounded corners (via fill_circle) on the curved
+# digits (0/6/8/9) instead of sharp right angles.
+#
+# `fb` here is the raw ILI9341 driver (or its Pillow preview stand-in), not
+# a framebuf.FrameBuffer -- draws go through fill_rectangle()/fill_circle(),
+# matching the rest of the TFT build (see scene.py).
 #
 # Segment layout (standard 7-segment naming):
 #   _a_
@@ -23,27 +30,67 @@ _SEGMENTS = {
     "9": "abcdfg",
 }
 
+# Digits with a curved bowl get rounded corners instead of serif caps.
+_ROUNDED = set("03689")
 
-def _digit(fb, x, y, w, h, digit, t, color):
+
+def _h_seg(fb, x, cy, w, thick, color, serif):
+    """Horizontal segment centered on row `cy`, spanning [x, x+w)."""
+    fb.fill_rectangle(x, cy - thick // 2, w, thick, color)
+    if serif:
+        cap = thick + 2
+        fb.fill_rectangle(x, cy - cap // 2, 2, cap, color)
+        fb.fill_rectangle(x + w - 2, cy - cap // 2, 2, cap, color)
+
+
+def _v_seg(fb, cx, y, h, thick, color, serif):
+    """Vertical segment centered on column `cx`, spanning [y, y+h)."""
+    fb.fill_rectangle(cx - thick // 2, y, thick, h, color)
+    if serif:
+        cap = thick + 2
+        fb.fill_rectangle(cx - cap // 2, y, cap, 2, color)
+        fb.fill_rectangle(cx - cap // 2, y + h - 2, cap, 2, color)
+
+
+def _digit(fb, x, y, w, h, digit, thickness, color):
     segs = _SEGMENTS[digit]
     half = h // 2
+    v_thick = thickness
+    h_thick = max(2, int(thickness * 0.75))  # horizontals read lighter than stems
+    rounded = digit in _ROUNDED
+    serif = not rounded
+
+    cx_l, cx_r = x, x + w
+    cy_t, cy_m, cy_b = y, y + half, y + h
+
     if "a" in segs:
-        fb.rect(x + t, y, w - 2 * t, t, color, True)
-    if "d" in segs:
-        fb.rect(x + t, y + h - t, w - 2 * t, t, color, True)
+        _h_seg(fb, x, cy_t, w, h_thick, color, serif)
     if "g" in segs:
-        fb.rect(x + t, y + half - t // 2, w - 2 * t, t, color, True)
+        _h_seg(fb, x, cy_m, w, h_thick, color, serif)
+    if "d" in segs:
+        _h_seg(fb, x, cy_b, w, h_thick, color, serif)
     if "f" in segs:
-        fb.rect(x, y + t, t, half - t, color, True)
+        _v_seg(fb, cx_l, cy_t, half, v_thick, color, serif)
     if "b" in segs:
-        fb.rect(x + w - t, y + t, t, half - t, color, True)
+        _v_seg(fb, cx_r, cy_t, half, v_thick, color, serif)
     if "e" in segs:
-        fb.rect(x, y + half, t, half - t, color, True)
+        _v_seg(fb, cx_l, cy_m, half, v_thick, color, serif)
     if "c" in segs:
-        fb.rect(x + w - t, y + half, t, half - t, color, True)
+        _v_seg(fb, cx_r, cy_m, half, v_thick, color, serif)
+
+    if rounded:
+        r = max(1, h_thick // 2)
+        for (cx, cy, present) in (
+            (cx_l, cy_t, "a" in segs and "f" in segs),
+            (cx_r, cy_t, "a" in segs and "b" in segs),
+            (cx_l, cy_b, "d" in segs and "e" in segs),
+            (cx_r, cy_b, "d" in segs and "c" in segs),
+        ):
+            if present:
+                fb.fill_circle(cx, cy, r, color)
 
 
-def draw_number(fb, x, y, text, box_w=26, box_h=40, gap=6, thickness=4, color=1):
+def draw_number(fb, x, y, text, box_w=44, box_h=66, gap=8, thickness=8, color=1):
     """Draws `text` (digits only) left-to-right starting at (x, y)."""
     for ch in text:
         if ch in _SEGMENTS:
@@ -51,7 +98,7 @@ def draw_number(fb, x, y, text, box_w=26, box_h=40, gap=6, thickness=4, color=1)
         x += box_w + gap
 
 
-def measure(text, box_w=26, gap=6):
+def measure(text, box_w=44, gap=8):
     if not text:
         return 0
     return len(text) * box_w + (len(text) - 1) * gap

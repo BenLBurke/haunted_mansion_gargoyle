@@ -1,0 +1,11 @@
+[Unit]
+Description=Check for and apply gargoyle OTA updates
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Deliberately the system python3, not the app's venv -- this needs to keep
+# working even if an update left the venv broken, which is exactly the
+# scenario this script exists to recover from. See ota_apply.py.
+ExecStart=/usr/bin/python3 /opt/gargoyle/pi-zero/scripts/ota_apply.py --config /etc/gargoyle/config.yaml

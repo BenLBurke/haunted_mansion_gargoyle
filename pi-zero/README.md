@@ -12,6 +12,10 @@ Disney World.
 - No keyboard or monitor needed to set it up -- on first boot (or if it ever
   loses its WiFi) it broadcasts its own hotspot with a captive setup page so
   you can hand it your home WiFi from a phone.
+- Hold a physical reset button to forget WiFi and go back into setup mode
+  (also lets you pick a different park).
+- Checks for and installs new releases on its own, with automatic rollback
+  if an update doesn't come up healthy -- see [docs/OTA.md](docs/OTA.md).
 
 It runs on a Raspberry Pi Zero 2 W (or Zero W) embedded in the print,
 polling the community [themeparks.wiki](https://themeparks.wiki/) API.
@@ -26,11 +30,17 @@ wiring diagram, and notes on integrating the LEDs/screen/speaker into the
 
 1. Flash Raspberry Pi OS Lite (Bookworm+) to a microSD card and boot the Pi.
 2. Wire up the hardware per [docs/HARDWARE.md](docs/HARDWARE.md).
-3. Clone this repo onto the Pi and run:
+3. Run the installer -- it clones this repo itself (into `/opt/gargoyle`,
+   pinned to the latest tagged release), so you don't need to `git clone`
+   it yourself first:
    ```
-   sudo bash scripts/install.sh
+   curl -fsSL https://raw.githubusercontent.com/BenLBurke/haunted_mansion_gargoyle/main/pi-zero/scripts/install.sh | sudo bash
    ```
 4. Connect it to your WiFi -- see [docs/WIFI_SETUP.md](docs/WIFI_SETUP.md).
+
+From here it checks for and applies new releases on its own -- see
+[docs/OTA.md](docs/OTA.md) -- and a long-press on the reset button forgets
+WiFi and re-enters setup mode any time you need to reconfigure it.
 
 Configuration (which park to track, GPIO pin assignments, sound cues, poll
 interval, etc.) lives in `/etc/gargoyle/config.yaml`; edit it and
@@ -69,8 +79,9 @@ after every frame, LEDs/audio just log what they would have done, and WiFi
 provisioning is skipped entirely.
 
 Run the test suite (covers the API client, wait-time/park-open change
-detection, the candle flicker algorithm, and config loading -- the parts that
-don't need real hardware to exercise):
+detection, the candle flicker algorithm, config loading, and the OTA
+updater's apply/rollback logic -- the parts that don't need real hardware
+to exercise):
 
 ```
 pytest

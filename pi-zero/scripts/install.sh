@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Installs the gargoyle app on a Raspberry Pi OS (Bookworm+) Zero W / Zero 2 W.
-# Run from a clone of this repo: sudo bash scripts/install.sh
+# Run as: sudo bash scripts/install.sh
+#
+# /opt/gargoyle ends up as a real git clone of the canonical repo (not an
+# rsync copy of whatever local checkout you ran this from) -- that's what
+# lets OTA updates work afterwards: gargoyle-ota-check.service does a plain
+# `git fetch`/`git checkout <tag>` against it. See docs/OTA.md.
 set -euo pipefail
 
 if [[ $EUID -ne 0 ]]; then
@@ -8,15 +13,15 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INSTALL_DIR="/opt/gargoyle"
 CONFIG_DIR="/etc/gargoyle"
+REPO_URL="https://github.com/BenLBurke/haunted_mansion_gargoyle.git"
 BOOT_CONFIG="/boot/firmware/config.txt"
 [[ -f "$BOOT_CONFIG" ]] || BOOT_CONFIG="/boot/config.txt"
 
 echo "==> Installing system packages"
 apt-get update
-apt-get install -y python3-venv python3-pip i2c-tools alsa-utils network-manager avahi-daemon rsync
+apt-get install -y python3-venv python3-pip i2c-tools alsa-utils network-manager avahi-daemon git
 
 echo "==> Setting hostname to gargoyle.local"
 hostnamectl set-hostname gargoyle
@@ -30,45 +35,99 @@ if ! grep -q "^dtoverlay=max98357a" "$BOOT_CONFIG" 2>/dev/null; then
   echo "dtoverlay=max98357a" >> "$BOOT_CONFIG"
 fi
 
-echo "==> Copying app to $INSTALL_DIR"
-mkdir -p "$INSTALL_DIR"
-rsync -a --delete --exclude venv --exclude __pycache__ --exclude '.git' "$REPO_DIR"/ "$INSTALL_DIR"/
+echo "==> Deploying $INSTALL_DIR as a git clone of $REPO_URL"
+if [[ -d "$INSTALL_DIR/.git" ]]; then
+  git -C "$INSTALL_DIR" fetch origin
+else
+  rm -rf "$INSTALL_DIR"
+  git clone "$REPO_URL" "$INSTALL_DIR"
+fi
+
+echo "==> Checking out the latest release"
+LATEST_TAG="$(python3 -c "
+import json, urllib.request
+req = urllib.request.Request(
+    'https://api.github.com/repos/BenLBurke/haunted_mansion_gargoyle/releases/latest',
+    headers={'User-Agent': 'gargoyle-install'},
+)
+with urllib.request.urlopen(req, timeout=15) as resp:
+    print(json.load(resp)['tag_name'])
+")"
+git -C "$INSTALL_DIR" checkout "$LATEST_TAG"
+echo "    checked out $LATEST_TAG"
 
 echo "==> Creating virtualenv"
 python3 -m venv "$INSTALL_DIR/venv"
 "$INSTALL_DIR/venv/bin/pip" install --upgrade pip
-"$INSTALL_DIR/venv/bin/pip" install -r "$INSTALL_DIR/requirements.txt"
+"$INSTALL_DIR/venv/bin/pip" install -r "$INSTALL_DIR/pi-zero/requirements.txt"
 
 echo "==> Generating sound cues"
-"$INSTALL_DIR/venv/bin/python" -m gargoyle.audio.generate_tones
+(cd "$INSTALL_DIR/pi-zero" && "$INSTALL_DIR/venv/bin/python" -m gargoyle.audio.generate_tones)
 
 echo "==> Writing default config"
 mkdir -p "$CONFIG_DIR"
 if [[ ! -f "$CONFIG_DIR/config.yaml" ]]; then
-  cp "$INSTALL_DIR/config/config.example.yaml" "$CONFIG_DIR/config.yaml"
+  cp "$INSTALL_DIR/pi-zero/config/config.example.yaml" "$CONFIG_DIR/config.yaml"
 fi
 
 echo "==> Installing captive-portal DNS redirect"
 mkdir -p /etc/NetworkManager/dnsmasq-shared.d
-cp "$INSTALL_DIR/systemd/captive-portal-dnsmasq.conf" /etc/NetworkManager/dnsmasq-shared.d/captive-portal.conf
+cp "$INSTALL_DIR/pi-zero/systemd/captive-portal-dnsmasq.conf" /etc/NetworkManager/dnsmasq-shared.d/captive-portal.conf
 
 echo "==> Installing systemd service"
-cp "$INSTALL_DIR/systemd/gargoyle.service" /etc/systemd/system/gargoyle.service
+cp "$INSTALL_DIR/pi-zero/systemd/gargoyle.service" /etc/systemd/system/gargoyle.service
+
+read_config_value() {
+  # Tiny scalar-only reader so this script doesn't need PyYAML -- $1 is the
+  # config.yaml key, $2 is the fallback if it's missing or the file doesn't exist.
+  python3 -c "
+import re
+try:
+    with open('$CONFIG_DIR/config.yaml') as f:
+        for line in f:
+            m = re.match(r'$1:\s*([0-9.]+)', line.strip())
+            if m:
+                print(m.group(1))
+                break
+        else:
+            print('$2')
+except OSError:
+    print('$2')
+"
+}
+
+echo "==> Installing OTA update checker"
+OTA_INTERVAL_HOURS="$(read_config_value ota_check_interval_hours 24)"
+cp "$INSTALL_DIR/pi-zero/systemd/gargoyle-ota-check.service" /etc/systemd/system/gargoyle-ota-check.service
+sed "s/OnUnitActiveSec=24h/OnUnitActiveSec=${OTA_INTERVAL_HOURS}h/" \
+  "$INSTALL_DIR/pi-zero/systemd/gargoyle-ota-check.timer" > /etc/systemd/system/gargoyle-ota-check.timer
+
+RESET_HOLD_SECONDS="$(read_config_value reset_hold_seconds 3)"
+
 systemctl daemon-reload
 systemctl enable gargoyle.service
 systemctl restart gargoyle.service
+systemctl enable --now gargoyle-ota-check.timer
 
-cat <<'EOF'
+cat <<EOF
 
-==> Done!
+==> Done! Installed release $LATEST_TAG.
 
 If this is the first boot without WiFi configured, the gargoyle will start
 broadcasting the "Gargoyle-Setup" WiFi network. Connect to it from your phone,
 then open http://10.42.0.1/ (it should pop up automatically) to hand over
 your home WiFi credentials.
 
+Hold the reset button for ${RESET_HOLD_SECONDS} seconds any time to forget
+WiFi and re-enter setup mode (also lets you pick a different park).
+
 Edit /etc/gargoyle/config.yaml to change parks, GPIO pins, sound cues, etc.,
-then `sudo systemctl restart gargoyle`.
+then \`sudo systemctl restart gargoyle\`.
+
+OTA updates check for a newer GitHub release every ${OTA_INTERVAL_HOURS}h
+(gargoyle-ota-check.timer) and roll back automatically if the service
+doesn't come up healthy afterwards. See docs/OTA.md.
 
 Logs: journalctl -u gargoyle -f
+OTA update logs: journalctl -u gargoyle-ota-check -f
 EOF

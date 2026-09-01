@@ -1,21 +1,58 @@
-# Motion for the 320x240 TFT build. Three effects, each scoped to a dirty
-# rect except lightning, which is deliberately full-screen.
+# Motion for the 320x240 TFT build. Four effects, each scoped to a dirty rect
+# except lightning, which is deliberately full-screen.
 #
-# Cadence is the whole point here: the user wants a near-still panel. The
-# ghost makes ONE pass every 150-210 seconds and is otherwise absent.
+# Cadence is the whole point here: the user wants a near-still panel. Only the
+# candle flame moves continuously (4 steps, 1.6s, ~448 bytes of SPI per frame).
+# The ghost makes ONE pass every 150-210 seconds and is otherwise absent.
 # Lightning fires only on an actual data change, never on a timer.
 #
 # This is a deliberate reversal of the OLED build's animations.py, where a
 # 3.2-second bat-then-ghost sting fired on every wait change.
-#
-# No on-screen candle here -- an earlier version painted one next to the
-# facade, but it didn't read well at this size and was dropped. The
-# physical candlestick LEDs (candle.py) are unrelated and unaffected.
 
 import random
 import time
 
 import scene as scene_mod
+
+# ---- candle flame: 4 discrete steps, 1.6s loop ----
+FLAME_PERIOD_MS = 400          # 4 steps x 400ms = 1.6s
+FLAME_BODY = (255, 200, 113)   # #ffc871
+FLAME_CORE = (255, 251, 238)   # #fffbee
+FLAME_TIP  = (240, 116, 42)    # #f0742a
+
+# (width, height, x_nudge) per step -- approximates the design's
+# scale/rotate pairs: (1.00x1.00,-1.5), (0.86x1.22,+2), (1.12x0.88,-2.5), (0.94x1.14,+1)
+FLAME_STEPS = ((3, 7, 0), (3, 9, 1), (4, 6, -1), (3, 8, 0))
+
+
+class FlameFlicker:
+    def __init__(self, scene):
+        self.s = scene
+        self._i = 0
+        self._last = time.ticks_ms()
+
+    def tick(self):
+        now = time.ticks_ms()
+        if time.ticks_diff(now, self._last) < FLAME_PERIOD_MS:
+            return
+        self._last = now
+        self._i = (self._i + 1) % len(FLAME_STEPS)
+        self._draw(self._i)
+
+    def _draw(self, i):
+        w, h, nudge = FLAME_STEPS[i]
+        rx, ry, rw, rh = scene_mod.R_FLAME
+        self.s.restore(scene_mod.R_FLAME)
+        cx = rx + rw // 2 + nudge
+        base = ry + rh - 1
+        d = self.s.d
+        for row in range(h):
+            t = row / max(1, h - 1)
+            span = max(1, int(w * (1.0 - t * 0.75)))
+            color = self.s.rgb(scene_mod._lerp(FLAME_BODY, FLAME_TIP, t)) if t > 0.5 \
+                else self.s.rgb(scene_mod._lerp(FLAME_CORE, FLAME_BODY, t * 2))
+            d.fill_rectangle(cx - span // 2, base - row, span, 1, color)
+
 
 # ---- ghost: one drift pass every 150-210s ----
 GHOST_BODY = (141, 134, 163)   # #8d86a3
@@ -50,30 +87,20 @@ class GhostDrift:
         self._draw()
 
     def _rect(self, x):
-        """Clipped to the panel on both edges -- used by both _erase() and
-        _draw(), so an unclipped rect (previously only _draw() clipped its
-        own copy) can't reach restore() and ask it to paint past x=319."""
-        left = max(0, x)
-        right = min(scene_mod.W, x + scene_mod.GHOST_W)
-        return (left, scene_mod.GHOST_Y, max(0, right - left), scene_mod.GHOST_H)
+        return (max(0, x), scene_mod.GHOST_Y, scene_mod.GHOST_W, scene_mod.GHOST_H)
 
     def _erase(self):
         self.s.restore(self._rect(self._x))
 
     def _draw(self):
         """Dome + torso + scalloped hem -- the same silhouette instinct as the
-        OLED build's _ghost_frame(), in color, with no alpha available.
-
-        Only draws once the ghost's full (unclipped) width fits on-screen:
-        the vendored driver's fill_circle()/fill_rectangle() don't clip a
-        shape that's partly off-grid, they silently skip drawing it
-        entirely -- so a circle centered near an edge using the ghost's
-        full radius (needed to keep it round) would just not render some
-        frames and render others, which is exactly what "blinking" was."""
-        if self._x < 0 or self._x + scene_mod.GHOST_W > scene_mod.W:
-            return
+        OLED build's _ghost_frame(), in color, with no alpha available."""
         d = self.s.d
         x, y, w, h = self._rect(self._x)
+        if x + w > scene_mod.W:
+            w = scene_mod.W - x
+        if w <= 2:
+            return
         cx = x + w // 2
         r = scene_mod.GHOST_W // 2
         body = self.s.rgb(GHOST_BODY)
