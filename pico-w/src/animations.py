@@ -1,97 +1,160 @@
-# Procedurally drawn ghost/bat animation played briefly whenever the wait
-# time changes. Drawn with plain framebuf primitives -- no sprite assets --
-# geometry was prototyped and eyeballed with a PIL stand-in before porting
-# here, since there's no way to preview framebuf output off-device.
+# Motion for the 320x240 TFT build. Four effects, each scoped to a dirty rect
+# except lightning, which is deliberately full-screen.
 #
-# All the pixel constants below were tuned by eye against the 128x64 OLED;
-# `play()` derives a size scale from the actual screen dimensions (1.0 on
-# that same 128x64 OLED, so this is unchanged there) so the same shapes read
-# proportionally on a much bigger canvas -- e.g. the 320x240 TFT -- instead
-# of looking tiny in the corner.
+# Cadence is the whole point here: the user wants a near-still panel. Only the
+# candle flame moves continuously (4 steps, 1.6s, ~448 bytes of SPI per frame).
+# The ghost makes ONE pass every 150-210 seconds and is otherwise absent.
+# Lightning fires only on an actual data change, never on a timer.
+#
+# This is a deliberate reversal of the OLED build's animations.py, where a
+# 3.2-second bat-then-ghost sting fired on every wait change.
 
-from array import array
+import random
+import time
 
-FRAME_DELAY_MS = 80
+import scene as scene_mod
 
+# ---- candle flame: 4 discrete steps, 1.6s loop ----
+FLAME_PERIOD_MS = 400          # 4 steps x 400ms = 1.6s
+FLAME_BODY = (255, 200, 113)   # #ffc871
+FLAME_CORE = (255, 251, 238)   # #fffbee
+FLAME_TIP  = (240, 116, 42)    # #f0742a
 
-def _bat_frame(fb, x, y, wing_lift, scale, color=1):
-    r = max(1, int(3 * scale))
-    fb.ellipse(x, y, r, r, color, True)
-    lift = int(wing_lift)
-    left_wing = array("h", [0, 0, int(-12 * scale), -lift, int(-6 * scale), int(2 * scale)])
-    right_wing = array("h", [0, 0, int(12 * scale), -lift, int(6 * scale), int(2 * scale)])
-    fb.poly(x, y, left_wing, color, True)
-    fb.poly(x, y, right_wing, color, True)
-    dx, dy1, dy2 = int(2 * scale), int(3 * scale), int(7 * scale)
-    fb.line(x - dx, y - dy1, x - dx - 1, y - dy2, color)
-    fb.line(x + dx, y - dy1, x + dx + 1, y - dy2, color)
-
-
-def _ghost_frame(fb, cx, cy, pulse, scale, color=1, bg=0):
-    body_w = int(22 * scale * pulse)
-    body_h = int(26 * scale * pulse)
-    if body_w < 6 or body_h < 10:
-        return
-    left = cx - body_w // 2
-    top = cy - body_h // 2
-    bottom = top + body_h
-    head_r = body_w // 2
-
-    fb.ellipse(cx, top + head_r, head_r, head_r, color, True, 0b0011)  # rounded dome
-    torso_top = top + head_r
-    fb.rect(left, torso_top, body_w, bottom - torso_top, color, True)
-
-    scallop_w = max(2, body_w // 3)
-    notch_r = scallop_w // 2 + 1
-    for i in range(3):
-        sx = left + i * scallop_w + scallop_w // 2
-        fb.ellipse(sx, bottom, notch_r, notch_r, bg, True, 0b0011)  # scalloped hem
-
-    if pulse > 0.4:
-        eye_w, eye_h = max(2, int(3 * scale)), max(2, int(4 * scale))
-        eye_dx = max(4, int(6 * scale))
-        eye_y = top + head_r
-        fb.rect(cx - eye_dx, eye_y, eye_w, eye_h, bg, True)
-        fb.rect(cx + eye_dx - eye_w, eye_y, eye_w, eye_h, bg, True)
+# (width, height, x_nudge) per step -- approximates the design's
+# scale/rotate pairs: (1.00x1.00,-1.5), (0.86x1.22,+2), (1.12x0.88,-2.5), (0.94x1.14,+1)
+FLAME_STEPS = ((3, 7, 0), (3, 9, 1), (4, 6, -1), (3, 8, 0))
 
 
-def play(fb, width, height, show, sleep_ms, frame_count=20):
-    """Runs the full bat-then-ghost sting on the given framebuf, calling
-    `show()` and `sleep_ms(FRAME_DELAY_MS)` after each frame. `fb` needs
-    fill/ellipse/rect/poly/line (framebuf.FrameBuffer satisfies this)."""
-    y_center = height // 2
-    scale = min(width / 128.0, height / 64.0)
-    margin = int(16 * scale)
+class FlameFlicker:
+    def __init__(self, scene):
+        self.s = scene
+        self._i = 0
+        self._last = time.ticks_ms()
 
-    for i in range(frame_count):
-        t = i / (frame_count - 1)
-        x = int(-margin + t * (width + 2 * margin))
-        wing_lift = 8 * scale * _sin(t * 6)
-        y = y_center + int(6 * scale * _sin(t * 3))
-        fb.fill(0)
-        _bat_frame(fb, x, y, wing_lift, scale)
-        show()
-        sleep_ms(FRAME_DELAY_MS)
+    def tick(self):
+        now = time.ticks_ms()
+        if time.ticks_diff(now, self._last) < FLAME_PERIOD_MS:
+            return
+        self._last = now
+        self._i = (self._i + 1) % len(FLAME_STEPS)
+        self._draw(self._i)
 
-    x_center = width // 2
-    for i in range(frame_count):
-        t = i / (frame_count - 1)
-        bob = int(4 * scale * _sin(t * 2))
-        if t < 0.2:
-            pulse = t / 0.2
-        elif t > 0.8:
-            pulse = (1.0 - t) / 0.2
-        else:
-            pulse = 1.0
-        fb.fill(0)
-        _ghost_frame(fb, x_center, y_center + bob, pulse, scale)
-        show()
-        sleep_ms(FRAME_DELAY_MS)
+    def _draw(self, i):
+        w, h, nudge = FLAME_STEPS[i]
+        rx, ry, rw, rh = scene_mod.R_FLAME
+        self.s.restore(scene_mod.R_FLAME)
+        cx = rx + rw // 2 + nudge
+        base = ry + rh - 1
+        d = self.s.d
+        for row in range(h):
+            t = row / max(1, h - 1)
+            span = max(1, int(w * (1.0 - t * 0.75)))
+            color = self.s.rgb(scene_mod._lerp(FLAME_BODY, FLAME_TIP, t)) if t > 0.5 \
+                else self.s.rgb(scene_mod._lerp(FLAME_CORE, FLAME_BODY, t * 2))
+            d.fill_rectangle(cx - span // 2, base - row, span, 1, color)
 
 
-def _sin(x):
-    # MicroPython's math.sin takes radians same as CPython; x here is already
-    # in "half turns" (matches the Pi version's math.pi * n phase multiplier).
-    import math
+# ---- ghost: one drift pass every 150-210s ----
+GHOST_BODY = (141, 134, 163)   # #8d86a3
+GHOST_EDGE = (74, 68, 89)      # #4a4459
+GHOST_EYE  = (36, 26, 51)      # #241a33
+GHOST_STEP_PX = 6
+GHOST_STEP_MS = 60
 
-    return math.sin(x * math.pi)
+
+class GhostDrift:
+    def __init__(self, scene):
+        self.s = scene
+        self._next = time.time() + random.randint(30, 90)   # first pass sooner
+        self._x = None
+        self._last = 0
+
+    def tick(self):
+        if self._x is None:
+            if time.time() < self._next:
+                return
+            self._x = -scene_mod.GHOST_W
+        now = time.ticks_ms()
+        if time.ticks_diff(now, self._last) < GHOST_STEP_MS:
+            return
+        self._last = now
+        self._erase()
+        self._x += GHOST_STEP_PX
+        if self._x > scene_mod.W:
+            self._x = None
+            self._next = time.time() + random.randint(150, 210)
+            return
+        self._draw()
+
+    def _rect(self, x):
+        return (max(0, x), scene_mod.GHOST_Y, scene_mod.GHOST_W, scene_mod.GHOST_H)
+
+    def _erase(self):
+        self.s.restore(self._rect(self._x))
+
+    def _draw(self):
+        """Dome + torso + scalloped hem -- the same silhouette instinct as the
+        OLED build's _ghost_frame(), in color, with no alpha available."""
+        d = self.s.d
+        x, y, w, h = self._rect(self._x)
+        if x + w > scene_mod.W:
+            w = scene_mod.W - x
+        if w <= 2:
+            return
+        cx = x + w // 2
+        r = scene_mod.GHOST_W // 2
+        body = self.s.rgb(GHOST_BODY)
+        edge = self.s.rgb(GHOST_EDGE)
+        d.fill_circle(cx, y + r, r, edge)
+        d.fill_circle(cx, y + r, r - 2, body)
+        d.fill_rectangle(x + 1, y + r, w - 2, h - r - 4, body)
+        # scalloped hem: three notches punched back to background
+        notch = max(2, w // 3)
+        for i in range(3):
+            nx = x + i * notch + notch // 2
+            self.s.restore((max(0, nx - notch // 2), y + h - 5, notch, 5))
+        # eyes
+        d.fill_rectangle(cx - 6, y + r - 2, 3, 4, self.s.rgb(GHOST_EYE))
+        d.fill_rectangle(cx + 3, y + r - 2, 3, 4, self.s.rgb(GHOST_EYE))
+
+
+# ---- lightning: only on a real data change ----
+# Design keyframes over 900ms: 0 -> .92 @4% -> .05 @10% -> .75 @16% -> .02 @24%
+# -> .45 @34% -> 0. Two bright strikes plus a dim afterglow. On device this
+# becomes flat fills with holds; ~150ms per full-screen push at 40MHz.
+STRIKES = ((255, 252, 240, 60),   # r, g, b, hold_ms
+           (214, 206, 255, 40),
+           (180, 170, 230, 30))
+
+
+def lightning(scene, park_label=""):
+    d = scene.d
+    for (r, g, b, hold) in STRIKES:
+        d.fill_rectangle(0, 0, scene_mod.W, scene_mod.H, scene.rgb((r, g, b)))
+        time.sleep_ms(hold)
+        scene.draw_all()
+        if park_label:
+            scene.draw_park_label(park_label)
+        time.sleep_ms(70)
+
+
+# ---- numeral roll-in ----
+# Design: 480ms, cubic-bezier(.2,.8,.2,1), translateY +26 -> 0, scale .94 -> 1.
+# On device: drop the scale, step translateY over ~8 frames inside R_NUMERAL,
+# restoring the tombstone patch each frame.
+ROLL_FRAMES = 8
+ROLL_OFFSET_PX = 26
+
+
+def _ease_out(t):
+    return 1 - (1 - t) ** 3
+
+
+def roll_in(scene, draw_digits):
+    """draw_digits(y_offset) must render the numeral shifted down by y_offset,
+    clipped to scene.R_NUMERAL."""
+    for i in range(ROLL_FRAMES):
+        t = _ease_out((i + 1) / ROLL_FRAMES)
+        scene.restore(scene_mod.R_NUMERAL)
+        draw_digits(int(ROLL_OFFSET_PX * (1 - t)))
+        time.sleep_ms(40)

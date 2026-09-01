@@ -1,68 +1,105 @@
-# High-level screen controller: wraps the SSD1306 device with rendering + animation playback.
+# Screen controller for the 320x240 SPI TFT gothic-mansion display.
+#
+# Key departure from the old SSD1306 build: there is NO full framebuffer and
+# no .show(). A full RGB565 320x240 buffer would be 153,600 bytes -- more
+# than half the Pico's 264KB of RAM, and won't fit alongside WiFi/TLS. So
+# draws go straight out over SPI instead: the static scene is painted once
+# in begin(), and after that only small dirty rects (the numeral, the
+# on-screen candle flame, an occasional drifting ghost) are ever repainted.
+# See scene.py for the geometry and the dirty-rect bookkeeping.
 
 import animations
 import renderer
+from scene import Scene
 
 
 def make_display(config):
-    """Builds whichever display device config["display_driver"] selects.
-    Both devices are framebuf.FrameBuffer subclasses with the same
-    fill/rect/ellipse/poly/line/text + show() surface, so Screen below
-    doesn't need to know or care which one it got."""
-    driver = config.get("display_driver", "ssd1306")
+    from machine import SPI, Pin
+    from ili9341 import Display, color565
 
-    if driver == "ili9341":
-        from tft_screen import make_tft
-
-        return make_tft(
-            config["tft_spi_id"],
-            config["tft_sck_pin"],
-            config["tft_mosi_pin"],
-            config["tft_miso_pin"],
-            config["tft_cs_pin"],
-            config["tft_dc_pin"],
-            config["tft_rst_pin"],
-            config["display_width"],
-            config["display_height"],
-            config["tft_rotation"],
-            config["tft_fg_color"],
-            config["tft_bg_color"],
-        )
-
-    if driver != "ssd1306":
-        raise ValueError("unknown display_driver: {}".format(driver))
-
-    from machine import I2C, Pin
-    from ssd1306 import SSD1306_I2C
-
-    i2c = I2C(config["i2c_id"], scl=Pin(config["i2c_scl_pin"]), sda=Pin(config["i2c_sda_pin"]), freq=400_000)
-    return SSD1306_I2C(config["display_width"], config["display_height"], i2c, addr=config["display_i2c_address"])
+    spi = SPI(
+        config["spi_id"],
+        baudrate=config["spi_baudrate"],
+        sck=Pin(config["spi_sck_pin"]),
+        mosi=Pin(config["spi_mosi_pin"]),
+        miso=Pin(config["spi_miso_pin"]),
+    )
+    backlight_pin = config.get("spi_backlight_pin")
+    if backlight_pin is not None:
+        Pin(backlight_pin, Pin.OUT).value(1)
+    device = Display(
+        spi,
+        cs=Pin(config["spi_cs_pin"]),
+        dc=Pin(config["spi_dc_pin"]),
+        rst=Pin(config["spi_rst_pin"]),
+        width=config["display_width"],
+        height=config["display_height"],
+        rotation=config["display_rotation"],
+    )
+    # ili9341.py exports color565() as a bare module function, not a Display
+    # method -- scene.py calls it as `display.color565(...)` (so its own
+    # tests can inject a fake device without importing the real driver), so
+    # bind it onto the instance here to satisfy that.
+    device.color565 = color565
+    return device
 
 
 class Screen:
-    def __init__(self, device, width, height):
+    def __init__(self, device, width, height, park_label=""):
         self.device = device
         self.width = width
         self.height = height
+        self.park_label = park_label
+        self.scene = Scene(device)
+        self._flame = animations.FlameFlicker(self.scene)
+        self._ghost = animations.GhostDrift(self.scene)
+
+    def begin(self):
+        """Paint the static scene once. Called from main.run() after construction."""
+        self.device.clear()
+        self.scene.draw_all()
+        if self.park_label:
+            self.scene.draw_park_label(self.park_label)
+
+    def tick(self):
+        """Cheap, non-blocking. Call every loop alongside candle.step()."""
+        self._flame.tick()
+        self._ghost.tick()
 
     def show_snapshot(self, snapshot, park_label, connected):
-        renderer.render_snapshot(self.device, self.width, self.height, snapshot, park_label, connected)
-        self.device.show()
+        # NOTE: no fill(0) -- the static scene stays put. Only the numeral or
+        # message rect is repainted.
+        renderer.render_snapshot(self.scene, snapshot, connected)
 
     def show_message(self, line1, line2=""):
-        renderer.render_message(self.device, self.width, self.height, line1, line2)
-        self.device.show()
+        renderer.render_message(self.scene, line1, line2)
+
+    def show_stale(self):
+        """A fetch failed. Leave the numeral exactly where it is -- an always-on
+        ambient display is more useful showing a stale wait than an error -- and
+        draw a quiet in-fiction indicator instead. Deliberately NOT show_message(),
+        which would wipe the tombstone."""
+        renderer.render_stale_indicator(self.scene, True)
+
+    def clear_stale(self):
+        renderer.render_stale_indicator(self.scene, False)
 
     def play_wait_time_change_animation(self):
-        import utime
-
-        animations.play(self.device, self.width, self.height, self.device.show, utime.sleep_ms)
+        """Lightning strike. Replaces the old build's 3.2s bat-then-ghost
+        sting -- the ghost now drifts on its own ~150-210s schedule via tick()."""
+        animations.lightning(self.scene, self.park_label)
 
 
 class ConsoleScreen:
     """Stands in for Screen when display_enabled is False -- prints what
-    would have been shown to the serial console instead, for bring-up
-    testing on a breadboard before the OLED is wired up."""
+    would have been shown instead, for bring-up testing on a breadboard
+    before the TFT is wired up."""
+
+    def begin(self):
+        print("[screen] (static mansion scene would be painted here)")
+
+    def tick(self):
+        pass
 
     def show_snapshot(self, snapshot, park_label, connected):
         attraction = snapshot.attraction
@@ -70,15 +107,16 @@ class ConsoleScreen:
             status = "{} min wait".format(attraction.wait_minutes)
         else:
             status = attraction.status
-
-        hours = ""
-        if snapshot.hours is not None:
-            hours = " ({}-{})".format(snapshot.hours.opening_text, snapshot.hours.closing_text)
-
-        print("[screen] {}: {}{} (connected={})".format(park_label, status, hours, connected))
+        print("[screen] {}: {} (connected={})".format(park_label, status, connected))
 
     def show_message(self, line1, line2=""):
         print("[screen] {} {}".format(line1, line2).rstrip())
 
+    def show_stale(self):
+        print("[screen] (fetch failed -- keeping last known number, stale mark on)")
+
+    def clear_stale(self):
+        print("[screen] (stale mark off)")
+
     def play_wait_time_change_animation(self):
-        print("[screen] (ghost/bat animation would play here)")
+        print("[screen] (lightning strike would play here)")

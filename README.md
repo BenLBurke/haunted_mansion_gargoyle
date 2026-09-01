@@ -5,8 +5,10 @@ haunts you with live Haunted Mansion wait times from Disneyland or Walt
 Disney World.
 
 - Each candlestick has an LED that flickers like a real candle flame.
-- A small screen embedded in the print shows the current wait time.
-- A ghost/bat animation plays across the screen whenever the wait time changes.
+- A small screen embedded in the print shows the current wait time -- a
+  ghost/bat sting on the Pi Zero build, a gothic mansion scene with a
+  lightning-flash change animation on the Pico W build (see each board's
+  README for the specifics).
 - A speaker dings ominously when the wait goes down, and plays a cue when
   the park opens and closes for the day.
 - No keyboard or monitor needed to set it up -- on first boot (or if it ever
@@ -27,8 +29,9 @@ you're building for:
 | Setup | SD card, `apt`/`pip`, systemd | Drag-and-drop firmware, copy files |
 
 They share the same wait-time API ([themeparks.wiki](https://themeparks.wiki/))
-and the same design (candle flicker, ghost/bat animation, WiFi captive
-portal), but are separate codebases -- the Pico has no Linux underneath, so
+and the same underlying design (candle flicker, a change animation on the
+screen, WiFi captive portal), but are separate codebases with their own
+on-screen visual identity -- the Pico has no Linux underneath, so
 none of the Pi build's libraries (Flask, Pillow, `requests`, systemd,
 NetworkManager) apply there. See [pico-w/README.md](pico-w/README.md#why-this-is-a-separate-implementation-not-a-port)
 for the full rundown of what's different and why.

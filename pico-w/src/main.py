@@ -54,7 +54,7 @@ def run():
 
     if config["display_enabled"]:
         device = make_display(config)
-        screen = Screen(device, config["display_width"], config["display_height"])
+        screen = Screen(device, config["display_width"], config["display_height"], park_label=park_label)
     else:
         print("display_enabled is false -- printing screen contents to the console instead")
         screen = ConsoleScreen()
@@ -66,6 +66,7 @@ def run():
         sound = NullSoundPlayer()
 
     tracker = StateTracker()
+    screen.begin()  # paint the static gothic scene once
     screen.show_message("Waking up...")
     sound.play("startup")
 
@@ -80,6 +81,11 @@ def run():
 
         for candle in candles:
             candle.step()
+
+        # Advances the on-screen candle flame (4-step, 1.6s) and the ghost's
+        # occasional drift pass. Cheap and non-blocking: ~448 bytes of SPI
+        # every 400ms. Distinct from the physical candle LEDs above.
+        screen.tick()
 
         if button.check():
             factory_reset()  # never returns -- forgets WiFi and resets
@@ -100,11 +106,20 @@ def _poll_and_react(park, park_label, screen, sound, tracker, config):
         snapshot = fetch_snapshot(park)
     except ThemeParksApiError as exc:
         print("themeparks.wiki request failed:", exc)
-        screen.show_message("Lost the signal...", "retrying")
+        # Keep the last known number on screen. A stale wait time is more
+        # useful on an always-on ambient display than an error message, and
+        # the panel should never look broken. show_stale() draws only a
+        # small dim corner mark and leaves the numeral untouched.
+        if tracker.current is not None:
+            screen.show_stale()
+        else:
+            # Nothing has ever been fetched, so there is no number to keep.
+            screen.show_message("Lost the signal...", "retrying")
         return
 
     reactions = tracker.update(snapshot)
     connected = network_setup.is_connected()
+    screen.clear_stale()
 
     if reactions.wait_time_changed:
         screen.play_wait_time_change_animation()

@@ -1,12 +1,23 @@
+import time
+
+# Same MicroPython time.ticks_ms/ticks_diff/sleep_ms stub needed to import
+# animations.py off-device -- see test_display.py for why.
+if not hasattr(time, "ticks_ms"):
+    time.ticks_ms = lambda: int(time.monotonic() * 1000)
+    time.ticks_diff = lambda a, b: a - b
+    time.ticks_add = lambda a, b: a + b
+    time.sleep_ms = lambda ms: None
+
 import animations
+import scene
 
 
-class FakeFB:
-    """Records every draw call by name/args -- doesn't need to actually
-    render anything, just let us inspect what animations.py asked for."""
-
+class FakeDevice:
     def __init__(self):
         self.calls = []
+
+    def color565(self, r, g, b):
+        return (r, g, b)
 
     def _record(self, name):
         def method(*args, **kwargs):
@@ -18,59 +29,46 @@ class FakeFB:
         return self._record(name)
 
 
-def _first_call(fb, name):
-    for call_name, args, kwargs in fb.calls:
-        if call_name == name:
-            return args
-    raise AssertionError("fb.{}() was never called".format(name))
+def _scene():
+    s = scene.Scene(FakeDevice())
+    s.draw_all()
+    return s
 
 
-def test_play_runs_without_error_and_shows_every_frame():
-    fb = FakeFB()
-    shows = []
-    sleeps = []
-
-    animations.play(fb, 128, 64, lambda: shows.append(1), lambda ms: sleeps.append(ms), frame_count=5)
-
-    assert len(shows) == 10  # 5 bat frames + 5 ghost frames
-    assert sleeps == [animations.FRAME_DELAY_MS] * 10
-
-
-def test_bat_size_matches_oled_baseline():
-    fb = FakeFB()
-    animations.play(fb, 128, 64, lambda: None, lambda ms: None, frame_count=3)
-
-    # First ellipse call each bat frame is the body dot: (x, y, rx, ry, color, fill)
-    x, y, rx, ry, color, fill = _first_call(fb, "ellipse")
-    assert (rx, ry) == (3, 3)  # scale is 1.0 at the OLED's own 128x64 dimensions
+def test_flame_flicker_cycles_through_all_four_steps():
+    s = _scene()
+    flame = animations.FlameFlicker(s)
+    flame._last = 0  # force every tick() to be "due"
+    seen = set()
+    for _ in range(8):
+        flame._last = 0
+        flame.tick()
+        seen.add(flame._i)
+    assert seen == {0, 1, 2, 3}
 
 
-def test_bat_size_scales_up_on_larger_canvas():
-    fb = FakeFB()
-    animations.play(fb, 320, 240, lambda: None, lambda ms: None, frame_count=3)
+def test_ghost_drift_eventually_completes_a_pass():
+    s = _scene()
+    ghost = animations.GhostDrift(s)
+    ghost._next = 0  # due immediately
+    ghost._x = -scene.GHOST_W
+    steps = 0
+    while ghost._x is not None and steps < 200:
+        ghost._last = 0  # force each tick to be "due"
+        ghost.tick()
+        steps += 1
+    assert ghost._x is None  # completed the pass and scheduled the next one
+    assert steps < 200
 
-    x, y, rx, ry, color, fill = _first_call(fb, "ellipse")
-    # scale = min(320/128, 240/64) = 2.5 -> int(3 * 2.5) == 7
-    assert (rx, ry) == (7, 7)
+
+def test_lightning_runs_without_error():
+    s = _scene()
+    animations.lightning(s, park_label="Disneyland")
 
 
-def test_ghost_frame_skipped_while_too_small_to_draw():
-    fb = FakeFB()
-    animations._ghost_frame(fb, 64, 32, pulse=0.01, scale=1.0)
-    assert fb.calls == []  # body_w/body_h round down below the drawable floor
-
-
-def test_ghost_eyes_only_drawn_past_pulse_threshold():
-    fb = FakeFB()
-    animations._ghost_frame(fb, 64, 32, pulse=1.0, scale=1.0)
-    eye_rects = [c for c in fb.calls if c[0] == "rect" and c[1][4] == 0]  # bg-colored rects
-    assert len(eye_rects) == 2
-
-    fb2 = FakeFB()
-    # pulse=0.39 is big enough to clear the size floor (body drawn) but
-    # still below the 0.4 eye threshold -- isolates "no eyes yet" from
-    # "nothing drawn at all".
-    animations._ghost_frame(fb2, 64, 32, pulse=0.39, scale=1.0)
-    assert any(c[0] == "rect" for c in fb2.calls)  # torso did get drawn
-    eye_rects2 = [c for c in fb2.calls if c[0] == "rect" and c[1][4] == 0]
-    assert len(eye_rects2) == 0
+def test_roll_in_calls_draw_digits_every_frame_with_shrinking_offset():
+    s = _scene()
+    offsets = []
+    animations.roll_in(s, lambda y_offset: offsets.append(y_offset))
+    assert len(offsets) == animations.ROLL_FRAMES
+    assert offsets[0] > offsets[-1] == 0
